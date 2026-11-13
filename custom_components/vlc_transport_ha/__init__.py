@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -9,6 +10,9 @@ import homeassistant.helpers.config_validation as cv
 DOMAIN = "vlc_transport_ha"
 CARD_URL = "/vlc_transport_ha/vlc-transport-ha-card.js"
 PLATFORMS: list[Platform] = [Platform.SENSOR]
+VERSION: str = json.loads(
+    (Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
+)["version"]
 
 # Configuration schema for UI-only integrations
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -19,7 +23,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     await hass.http.async_register_static_paths([
         StaticPathConfig(CARD_URL, str(frontend_path), cache_headers=False)
     ])
-    add_extra_js_url(hass, f"{CARD_URL}?v=1.0.4")
+    add_extra_js_url(hass, f"{CARD_URL}?v={VERSION}")
     return True
 
 

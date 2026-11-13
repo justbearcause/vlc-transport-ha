@@ -3,7 +3,7 @@
 [![Validate](https://github.com/justbearcause/vlc-transport-ha/actions/workflows/validate.yaml/badge.svg)](https://github.com/justbearcause/vlc-transport-ha/actions/workflows/validate.yaml)
 [![Marketplace](https://img.shields.io/badge/Marketplace%20%2F%20HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.11.0%2B-41BDF5.svg)](https://www.home-assistant.io/)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/justbearcause/vlc-transport-ha/releases)
+[![Version](https://img.shields.io/github/v/release/justbearcause/vlc-transport-ha?label=version&color=blue)](https://github.com/justbearcause/vlc-transport-ha/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A Home Assistant custom integration for real-time public transport departures in **València, Spain**, supporting both **EMT València** (municipal buses) and **Metrovalencia / FGV** (metro and tram).

@@ -28,9 +28,11 @@ def module(name):
 # the coordinator, XML parsing, network paths, and config fallback can run.
 for name in (
     "homeassistant", "homeassistant.components", "homeassistant.config_entries",
-    "homeassistant.core", "homeassistant.helpers", "homeassistant.helpers.aiohttp_client",
+    "homeassistant.const", "homeassistant.core", "homeassistant.helpers",
+    "homeassistant.helpers.aiohttp_client", "homeassistant.helpers.config_validation",
     "homeassistant.helpers.device_registry", "homeassistant.helpers.entity_platform",
-    "homeassistant.helpers.update_coordinator", "homeassistant.components.sensor",
+    "homeassistant.helpers.update_coordinator", "homeassistant.components.frontend",
+    "homeassistant.components.http", "homeassistant.components.sensor",
     "homeassistant.helpers.selector", "aiohttp", "voluptuous",
 ):
     module(name)
@@ -81,10 +83,23 @@ class UpdateFailed(Exception):
 
 
 test_modules["homeassistant.components.sensor"].SensorEntity = type("SensorEntity", (), {})
+test_modules["homeassistant.components.http"].StaticPathConfig = (
+    lambda url_path, path, cache_headers=True: types.SimpleNamespace(
+        url_path=url_path, path=path, cache_headers=cache_headers
+    )
+)
+test_modules["homeassistant.components.frontend"].add_extra_js_url = (
+    lambda hass, url: hass.extra_js_urls.append(url)
+)
+test_modules["homeassistant.const"].Platform = types.SimpleNamespace(SENSOR="sensor")
+test_modules["homeassistant.helpers.config_validation"].config_entry_only_config_schema = (
+    lambda domain: {"domain": domain}
+)
 test_modules["homeassistant.config_entries"].ConfigEntry = object
 test_modules["homeassistant.config_entries"].ConfigFlow = ConfigFlow
 test_modules["homeassistant.config_entries"].ConfigFlowResult = dict
 test_modules["homeassistant.core"].HomeAssistant = object
+test_modules["homeassistant.helpers"].config_validation = test_modules["homeassistant.helpers.config_validation"]
 test_modules["homeassistant.helpers.aiohttp_client"].async_get_clientsession = lambda hass: hass.session
 test_modules["homeassistant.helpers.device_registry"].DeviceEntryType = type("DeviceEntryType", (), {})
 test_modules["homeassistant.helpers.device_registry"].DeviceInfo = dict
@@ -116,6 +131,7 @@ def load(name, filename):
 
 
 with patch.dict(sys.modules, test_modules):
+    init = load("vlc_init_test", "__init__.py")
     sensor = load("vlc_sensor_test", "sensor.py")
     config_flow = load("vlc_config_flow_test", "config_flow.py")
 
@@ -347,6 +363,40 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
                 expected_keys,
                 f"Translation keys mismatch in {lang}.json",
             )
+
+    async def test_version_and_async_setup_card_registration(self):
+        import json
+        import re
+
+        manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+        manifest_version = manifest["version"]
+        self.assertRegex(
+            manifest_version,
+            r"^\d+\.\d+\.\d+(?:[-a-zA-Z0-9.]+)?$",
+            "manifest.json version must be a valid SemVer string",
+        )
+        self.assertEqual(init.VERSION, manifest_version)
+
+        registered_paths = []
+
+        async def async_register_static_paths(configs):
+            registered_paths.extend(configs)
+
+        hass = types.SimpleNamespace(
+            http=types.SimpleNamespace(
+                async_register_static_paths=async_register_static_paths
+            ),
+            extra_js_urls=[],
+        )
+        result = await init.async_setup(hass, {})
+        self.assertTrue(result)
+        self.assertEqual(len(registered_paths), 1)
+        self.assertEqual(registered_paths[0].url_path, init.CARD_URL)
+        self.assertFalse(registered_paths[0].cache_headers)
+        self.assertEqual(
+            hass.extra_js_urls,
+            [f"{init.CARD_URL}?v={manifest_version}"],
+        )
 
 
 if __name__ == "__main__":
