@@ -1,0 +1,35 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Add Valencia Transit Stop",
+                "description": "Choose the public transport operator.",
+                "data": {
+                    "provider": "Operator"
+                }
+            },
+            "emt": {
+                "title": "Add EMT València Bus Stop",
+                "description": "Search and select a bus stop from the list (or type its numeric ID).",
+                "data": {
+                    "stop_id": "Bus Stop",
+                    "name": "Custom Name (optional)"
+                }
+            },
+            "metrovalencia": {
+                "title": "Add Metrovalencia Station",
+                "description": "Search and select a Metro or Tram station from the list (or type its numeric ID).",
+                "data": {
+                    "stop_id": "Station",
+                    "name": "Custom Name (optional)"
+                }
+            }
+        },
+        "error": {
+            "invalid_stop_id": "Stop or station ID must contain numbers."
+        },
+        "abort": {
+            "already_configured": "This stop or station is already configured."
+        }
+    }
+}

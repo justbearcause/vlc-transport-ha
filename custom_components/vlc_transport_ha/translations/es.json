@@ -1,0 +1,35 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Añadir parada de transporte de Valencia",
+                "description": "Elige el operador de transporte público.",
+                "data": {
+                    "provider": "Operador"
+                }
+            },
+            "emt": {
+                "title": "Añadir parada de autobús de EMT València",
+                "description": "Busca y selecciona una parada de autobús de la lista (o escribe su ID numérico).",
+                "data": {
+                    "stop_id": "Parada de autobús",
+                    "name": "Nombre personalizado (opcional)"
+                }
+            },
+            "metrovalencia": {
+                "title": "Añadir estación de Metrovalencia",
+                "description": "Busca y selecciona una estación de metro o tranvía de la lista (o escribe su ID numérico).",
+                "data": {
+                    "stop_id": "Estación",
+                    "name": "Nombre personalizado (opcional)"
+                }
+            }
+        },
+        "error": {
+            "invalid_stop_id": "El ID de la parada o estación debe contener números."
+        },
+        "abort": {
+            "already_configured": "Esta parada o estación ya está configurada."
+        }
+    }
+}

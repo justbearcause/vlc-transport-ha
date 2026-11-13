@@ -1,0 +1,35 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Afig una parada de transport de València",
+                "description": "Tria l'operador de transport públic.",
+                "data": {
+                    "provider": "Operador"
+                }
+            },
+            "emt": {
+                "title": "Afig una parada d'autobús d'EMT València",
+                "description": "Busca i selecciona una parada d'autobús de la llista (o escriu el seu ID numèric).",
+                "data": {
+                    "stop_id": "Parada d'autobús",
+                    "name": "Nom personalitzat (opcional)"
+                }
+            },
+            "metrovalencia": {
+                "title": "Afig una estació de Metrovalencia",
+                "description": "Busca i selecciona una estació de metro o tramvia de la llista (o escriu el seu ID numèric).",
+                "data": {
+                    "stop_id": "Estació",
+                    "name": "Nom personalitzat (opcional)"
+                }
+            }
+        },
+        "error": {
+            "invalid_stop_id": "L'ID de la parada o estació ha de contindre números."
+        },
+        "abort": {
+            "already_configured": "Esta parada o estació ja està configurada."
+        }
+    }
+}

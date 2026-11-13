@@ -1,0 +1,20 @@
+{
+    "domain": "vlc_transport_ha",
+    "name": "Valencia Transport",
+    "categories": [
+        "vehicles_transport.public_transport"
+    ],
+    "codeowners": [
+        "@justbearcause"
+    ],
+    "config_flow": true,
+    "dependencies": [
+        "frontend",
+        "http"
+    ],
+    "documentation": "https://github.com/justbearcause/vlc-transport-ha",
+    "iot_class": "cloud_polling",
+    "issue_tracker": "https://github.com/justbearcause/vlc-transport-ha/issues",
+    "requirements": [],
+    "version": "1.0.0"
+}
