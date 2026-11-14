@@ -16,16 +16,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Verify tag matches manifest.json version
+      - name: Inject tag version into manifest.json
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          MANIFEST_VERSION=$(python3 -c 'import json; print(json.load(open("custom_components/vlc_transport_ha/manifest.json"))["version"])')
-          echo "Tag version:      ${TAG_VERSION}"
-          echo "Manifest version: ${MANIFEST_VERSION}"
-          if [ "${TAG_VERSION}" != "${MANIFEST_VERSION}" ]; then
-            echo "::error::Git tag (${GITHUB_REF_NAME}) does not match manifest.json version (${MANIFEST_VERSION})!"
-            exit 1
-          fi
+          python3 - "$TAG_VERSION" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          version = sys.argv[1]
+          if not re.match(r"^\d+\.\d+\.\d+(?:[-a-zA-Z0-9.]+)?$", version):
+              print(f"::error::Invalid version derived from tag: {version}", file=sys.stderr)
+              sys.exit(1)
+
+          manifest_path = Path("custom_components/vlc_transport_ha/manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          manifest["version"] = version
+          manifest_path.write_text(json.dumps(manifest, indent=4) + "\n", encoding="utf-8")
+          print(f"Injected version {version} into {manifest_path}")
+          PY
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -42,6 +52,11 @@ jobs:
           python -m unittest discover -s tests -p 'test_*.py' -v
           node --test tests/card.test.cjs
 
+      - name: Package integration ZIP for HACS
+        run: |
+          cd custom_components/vlc_transport_ha
+          zip -r "${GITHUB_WORKSPACE}/vlc_transport_ha.zip" . -x "*/__pycache__/*" "*.pyc" ".DS_Store"
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -54,7 +69,8 @@ jobs:
             PRERELEASE_FLAG=""
           fi
           if gh release view "${TAG}" >/dev/null 2>&1; then
-            echo "Release ${TAG} already exists, skipping creation."
+            echo "Release ${TAG} already exists, uploading updated zip asset."
+            gh release upload "${TAG}" vlc_transport_ha.zip --clobber
           else
-            gh release create "${TAG}" --title "${TAG}" --generate-notes ${PRERELEASE_FLAG}
+            gh release create "${TAG}" vlc_transport_ha.zip --title "${TAG}" --generate-notes ${PRERELEASE_FLAG}
           fi
