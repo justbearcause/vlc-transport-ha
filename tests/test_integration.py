@@ -278,12 +278,17 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stations, config_flow.FALLBACK_FGV_STATIONS)
         self.assertNotIn("ssl", self.session.calls[-1][1])
 
-        # Official FGV /estaciones JSON array response
+        # Official FGV /sincronizacion JSON response (and direct list)
         self.session.response = Response(
-            json_data=[
-                {"estacion_id_FGV": 16, "nombre": "Xàtiva"},
-                {"estacion_id_FGV": 999, "nombre": "Nueva Estación"},
-            ]
+            json_data={
+                "timestamp": "2026-11-14 12:00",
+                "data": {
+                    "estaciones": [
+                        {"estacion_id_FGV": 16, "nombre": "Xàtiva"},
+                        {"estacion_id_FGV": 999, "nombre": "Nueva Estación"},
+                    ]
+                },
+            }
         )
         stations_live = await flow._async_fetch_fgv_stations()
         self.assertEqual(stations_live["16"], "Xàtiva")
@@ -304,7 +309,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
                             {
                                 "cabecera": False,
                                 "capacity": 397,
-                                "destino": "Mar?tim",
+                                "destino": "Marítim",
                                 "latitude": 39.4699,
                                 "line_id": 5,
                                 "longitude": -0.3763,
@@ -337,7 +342,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         result = await self.coordinator._async_update_data()
         self.assertEqual(
             self.session.calls[-1][0],
-            "https://www.fgv.es/ap18/api/public/es/api/v1/V/horarios-prevision-3/16",
+            "https://www.fgv.es/fgv/app/es/api/v1/V/horarios-prevision-3/16",
         )
         self.assertEqual(len(result), 2)
         # Sorted by seconds ascending (45s first, then 172s)
@@ -366,12 +371,32 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.session.response = Response(json_data={"previsiones": []})
         self.assertEqual(await self.coordinator._async_update_data(), [])
 
+        # Fallback to vh_first / vh_second when trains is empty
+        self.session.response = Response(
+            json_data={
+                "previsiones": [
+                    {
+                        "line": "4",
+                        "line_id": 4,
+                        "trains": [],
+                        "vh_first": {"destino": "Mas del Rosari", "seconds": 90, "meters": 300},
+                        "vh_second": {"destino": "Ll. Llarga", "seconds": 240, "meters": 800},
+                    }
+                ]
+            }
+        )
+        vh_result = await self.coordinator._async_update_data()
+        self.assertEqual(len(vh_result), 2)
+        self.assertEqual(vh_result[0]["destination"], "Mas del Rosari")
+        self.assertEqual(vh_result[1]["destination"], "Ll. Llarga")
+
         # Error responses raise UpdateFailed
         for bad_resp, expected_msg in (
             (Response(status=502), "HTTP status 502"),
             (Response(body="not json"), "Invalid JSON"),
             (Response(json_data={"resultado": "Sin servicio"}), "Sin servicio"),
             (Response(json_data={"unexpected": 1}), "missing previsiones"),
+            (Response(error=TimeoutError()), "TimeoutError"),
         ):
             with self.subTest(expected_msg=expected_msg):
                 self.session.response = bad_resp

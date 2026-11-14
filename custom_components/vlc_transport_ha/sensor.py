@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-import html
 import logging
 import re
 from typing import Any
@@ -30,44 +29,7 @@ DOMAIN = "vlc_transport_ha"
 EMT_URL = "https://www.emtvalencia.es/EMT/mapfunctions/MapUtilsPetitions.php"
 EMT_NO_ESTIMATIONS = frozenset({"SENSE ESTIMACIONS", "SIN ESTIMACIONES"})
 FGV_PREVISION_URL = (
-    "https://www.fgv.es/ap18/api/public/es/api/v1/V/horarios-prevision-3"
-)
-
-FGV_ENCODING_FIXES: tuple[tuple[str, str], ...] = (
-    ("Mar?tim", "Marítim"),
-    ("Arag?", "Aragó"),
-    ("Castell?", "Castelló"),
-    ("B?tera", "Bétera"),
-    ("Ll?ria", "Llíria"),
-    ("T?ria", "Túria"),
-    ("Val?ncia", "València"),
-    ("?ngel", "Àngel"),
-    ("Guimer?", "Guimerà"),
-    ("Jes?s", "Jesús"),
-    ("Nept?", "Neptú"),
-    ("Beter?", "Beteró"),
-    ("Garb?", "Garbí"),
-    ("Zaragoz?", "Zaragozà"),
-    ("Andr?s", "Andrés"),
-    ("Estell?s", "Estellés"),
-    ("Tr?nsits", "Trànsits"),
-    ("Oceanogr?fic", "Oceanogràfic"),
-    ("Ci?ncies", "Ciències"),
-    ("Just?cia", "Justícia"),
-    ("Benim?met", "Benimàmet"),
-    ("Alm?ssera", "Almàssera"),
-    ("Alc?dia", "Alcúdia"),
-    ("Massalav?s", "Massalavés"),
-    ("Ausi?s", "Ausiàs"),
-    ("Real?n", "Realón"),
-    ("Bail?n", "Bailén"),
-    ("Cient?fic", "Científic"),
-    ("Tom?s", "Tomás"),
-    ("Col?legi", "Col·legi"),
-    ("X?tiva", "Xàtiva"),
-    ("Col?n", "Colón"),
-    ("Polit?cnica", "Politècnica"),
-    ("? Punt", "À Punt"),
+    "https://www.fgv.es/fgv/app/es/api/v1/V/horarios-prevision-3"
 )
 
 
@@ -125,10 +87,12 @@ class ValenciaTransitCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             self.last_error = str(err)
             raise
         except (aiohttp.ClientError, TimeoutError) as err:
-            self.last_error = f"Network error while polling {self.provider} (#{self.stop_id}): {err}"
+            err_detail = str(err) or type(err).__name__
+            self.last_error = f"Network error while polling {self.provider} (#{self.stop_id}): {err_detail}"
             raise UpdateFailed(self.last_error) from err
         except Exception as err:
-            self.last_error = f"Error getting data for {self.provider} (#{self.stop_id}): {err}"
+            err_detail = str(err) or type(err).__name__
+            self.last_error = f"Error getting data for {self.provider} (#{self.stop_id}): {err_detail}"
             raise UpdateFailed(self.last_error) from err
 
     async def _fetch_emt(self) -> list[dict[str, Any]]:
@@ -247,21 +211,6 @@ class ValenciaTransitCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
                 ) from err
             return self._parse_fgv_response(payload)
 
-    def _clean_fgv_text(self, text: str) -> str:
-        """Fix broken character encodings returned in FGV destination strings."""
-        cleaned = html.unescape(text or "").strip()
-        try:
-            cleaned = cleaned.encode("latin-1").decode("utf-8")
-        except (UnicodeEncodeError, UnicodeDecodeError):
-            pass
-        if "\ufffd" in cleaned:
-            cleaned = cleaned.replace("\ufffd", "?")
-        if "?" in cleaned:
-            for broken, fixed in FGV_ENCODING_FIXES:
-                if broken in cleaned:
-                    cleaned = cleaned.replace(broken, fixed)
-        return cleaned.strip()
-
     def _parse_fgv_response(self, payload: Any) -> list[dict[str, Any]]:
         """Parse official FGV real-time JSON payload into sorted departures."""
         if isinstance(payload, list):
@@ -297,7 +246,16 @@ class ValenciaTransitCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
                 else line_group.get("line_id")
             )
             trains = line_group.get("trains")
-            if not isinstance(trains, list):
+            if not isinstance(trains, list) or not trains:
+                trains = [
+                    t
+                    for t in (
+                        line_group.get("vh_first"),
+                        line_group.get("vh_second"),
+                    )
+                    if isinstance(t, dict)
+                ]
+            if not trains:
                 continue
 
             for train in trains:
@@ -313,10 +271,9 @@ class ValenciaTransitCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
                 if seconds < 0:
                     continue
 
-                raw_dest = str(train.get("destino") or "").strip()
-                if not raw_dest:
+                destination = str(train.get("destino") or "").strip()
+                if not destination:
                     continue
-                destination = self._clean_fgv_text(raw_dest)
 
                 raw_line = (
                     group_line

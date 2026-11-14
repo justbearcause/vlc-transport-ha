@@ -24,7 +24,7 @@ It includes an **automatically registered Lovelace departure board card** (`cust
   - **EMT València (Bus)**: Fetches real-time bus arrival predictions from the official EMT SAE endpoint.
   - **Metrovalencia (Metro & Tram)**: Fetches real-time metro and tram arrival predictions (countdown in seconds, distance in meters, train unit number, capacity, and GPS coordinates) directly from the official FGV SAE REST API.
 - **Zero-YAML UI Setup (Config Flow)**:
-  - Searchable dropdown list of all EMT bus stops (from the **Valencia Open Data Geoportal** with automatic pagination) and Metrovalencia stations (from the **official FGV API**, backed by a built-in fallback directory of all 141 FGV stations).
+  - Searchable dropdown list of all EMT bus stops (from the **Valencia Open Data Geoportal** with automatic pagination) and Metrovalencia stations (from the **official FGV API**, backed by a built-in fallback directory of all 144 FGV stations).
   - Supports typing any numeric stop or station ID directly.
 - **Bundled Lovelace Departure Board Card (`custom:vlc-transport-ha-card`)**:
   - **Auto-Registered**: Served directly by the integration at `/vlc_transport_ha/vlc-transport-ha-card.js` — no separate Marketplace (HACS) frontend download or manual Lovelace resource configuration needed.
@@ -292,11 +292,11 @@ This integration communicates directly with public Valencia transit endpoints wi
 1. **EMT València Stop Directory (Config Flow)**:
    - Valencia Open Data ArcGIS REST Service (`OPENDATA/Trafico/MapServer/226`) with automatic pagination.
 2. **Metrovalencia Station Directory (Config Flow)**:
-   - Official FGV REST API (`https://www.fgv.es/ap18/api/public/es/api/v1/V/estaciones`), backed by an embedded fallback dictionary of all 141 official FGV stations in case the endpoint is temporarily unreachable.
+   - Official FGV REST API (`https://www.fgv.es/fgv/app/es/api/v1/V/sincronizacion?fecha_desde=...`), backed by an embedded fallback dictionary of all 144 official FGV stations (`assets/fgvv.db`) in case the endpoint is temporarily unreachable.
 3. **EMT Real-Time Arrivals (`ValenciaTransitCoordinator`)**:
    - Queries `https://www.emtvalencia.es/EMT/mapfunctions/MapUtilsPetitions.php?sec=getSAE&parada=<stop_id>&adaptados=false`, parses the XML `<estimacion>` payload, fixes Latin-1/UTF-8 encoding quirks, and resolves relative minutes/`Próximo` or `HH:MM` strings into exact timezone-aware timestamps.
 4. **Metrovalencia Real-Time Departures (`ValenciaTransitCoordinator`)**:
-   - Queries the official FGV SAE endpoint `https://www.fgv.es/ap18/api/public/es/api/v1/V/horarios-prevision-3/<stop_id>`, repairs broken character encodings in destination names, sorts upcoming trains across all lines by remaining `seconds`, and exposes live train telemetry (`seconds`, `minutes`, `meters`, `vehicle`, `capacity`, `latitude`, `longitude`).
+   - Queries the official FGV SAE endpoint `https://www.fgv.es/fgv/app/es/api/v1/V/horarios-prevision-3/<stop_id>`, sorts upcoming trains across all lines by remaining `seconds`, and exposes live train telemetry (`seconds`, `minutes`, `meters`, `vehicle`, `capacity`, `latitude`, `longitude`).
 
 ---
 

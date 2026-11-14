@@ -32,9 +32,9 @@ EMT_STOPS_API_URL = (
     "&returnGeometry=false&f=json"
 )
 
-# Official FGV (Metrovalencia) API endpoint for all stations
+# Official FGV (Metrovalencia) app synchronization endpoint for station updates
 FGV_STATIONS_API_URL = (
-    "https://www.fgv.es/ap18/api/public/es/api/v1/V/estaciones"
+    "https://www.fgv.es/fgv/app/es/api/v1/V/sincronizacion?fecha_desde=2025-11-13%2015:45"
 )
 
 # Fallback directory of official FGV metro and tram stations (used if API is unavailable)
@@ -422,7 +422,9 @@ class ValenciaTransitConfigFlow(ConfigFlow, domain=DOMAIN):
         session = async_get_clientsession(self.hass)
         try:
             async with session.get(
-                FGV_STATIONS_API_URL, timeout=aiohttp.ClientTimeout(total=10)
+                FGV_STATIONS_API_URL,
+                headers={"Accept": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 if resp.status != 200:
                     _LOGGER.warning(
@@ -437,6 +439,12 @@ class ValenciaTransitConfigFlow(ConfigFlow, domain=DOMAIN):
 
                 if isinstance(data, list):
                     rows = data
+                elif (
+                    isinstance(data, dict)
+                    and isinstance(data.get("data"), dict)
+                    and isinstance(data["data"].get("estaciones"), list)
+                ):
+                    rows = data["data"]["estaciones"]
                 elif isinstance(data, dict) and "estaciones" in data:
                     rows = data["estaciones"]
                 elif isinstance(data, dict) and "paradas" in data:
