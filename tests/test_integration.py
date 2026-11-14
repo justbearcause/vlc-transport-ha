@@ -229,6 +229,30 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(UpdateFailed, "Invalid EMT departure time"):
             await self.coordinator._fetch_emt()
 
+    async def test_emt_no_estimations_treated_as_empty_schedule(self):
+        for payload in (
+            "<bus><imagen>img</imagen><icono>ico</icono><error>SENSE ESTIMACIONS</error></bus>",
+            "<bus><imagen>img</imagen><icono>ico</icono><error> Sin estimaciones </error></bus>",
+            bus(error="SENSE ESTIMACIONS"),
+            bus(error="SIN ESTIMACIONES"),
+        ):
+            with self.subTest(payload=payload):
+                self.coordinator.last_error = "Previous error"
+                self.session.response = Response(xml(payload))
+                result = await self.coordinator._async_update_data()
+                self.assertEqual(result, [])
+                self.assertIsNone(self.coordinator.last_error)
+                self.assertIsNotNone(self.coordinator.last_success_time)
+
+        # Mixed response: SENSE ESTIMACIONS alongside a valid bus does not log a warning
+        no_est_3 = "<bus><imagen>img</imagen><icono>ico</icono><error>SENSE ESTIMACIONS</error></bus>"
+        self.session.response = Response(xml(no_est_3, bus(minutes="4 min.")))
+        with patch.object(sensor._LOGGER, "warning") as mock_warning:
+            result = await self.coordinator._async_update_data()
+        mock_warning.assert_not_called()
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["time"], "00:03")
+
     async def test_emt_bad_xml_http_and_timeout(self):
         for response, message in (
             (Response("<broken"), "Invalid XML"),

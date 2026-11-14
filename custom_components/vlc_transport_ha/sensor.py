@@ -34,6 +34,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "vlc_transport_ha"
 EMT_URL = "https://www.emtvalencia.es/EMT/mapfunctions/MapUtilsPetitions.php"
+EMT_NO_ESTIMATIONS = frozenset({"SENSE ESTIMACIONS", "SIN ESTIMACIONES"})
 
 
 async def async_setup_entry(
@@ -132,7 +133,10 @@ class ValenciaTransitCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             if bus.tag != "bus":
                 continue
             if len(bus) == 3:
-                errors.append(bus[2].text or "Unknown EMT error")
+                error_text = (bus[2].text or "").strip()
+                if error_text.upper() in EMT_NO_ESTIMATIONS:
+                    continue
+                errors.append(error_text or "Unknown EMT error")
                 continue
             if len(bus) != 5:
                 errors.append(f"Invalid EMT bus response: {len(bus)} fields")
@@ -140,7 +144,10 @@ class ValenciaTransitCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
 
             line, destination, minutes, arrival, error = (child.text for child in bus)
             if error:
-                errors.append(error)
+                error_text = error.strip()
+                if error_text.upper() in EMT_NO_ESTIMATIONS:
+                    continue
+                errors.append(error_text)
                 continue
             # emtvlcapi maps the provider's "Próximo" estimate to one minute.
             raw_val = (minutes or arrival or "").strip()
