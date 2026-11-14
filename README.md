@@ -22,17 +22,17 @@ It includes an **automatically registered Lovelace departure board card** (`cust
 
 - **Dual Operator Support**:
   - **EMT València (Bus)**: Fetches real-time bus arrival predictions from the official EMT SAE endpoint.
-  - **Metrovalencia (Metro & Tram)**: Fetches real-time metro and tram departures from the Valencia Geoportal / FGV live departures service.
+  - **Metrovalencia (Metro & Tram)**: Fetches real-time metro and tram arrival predictions (countdown in seconds, distance in meters, train unit number, capacity, and GPS coordinates) directly from the official FGV SAE REST API.
 - **Zero-YAML UI Setup (Config Flow)**:
-  - Searchable dropdown list of all EMT bus stops and Metrovalencia stations loaded dynamically from the **Valencia Open Data Geoportal** (with automatic pagination and a built-in fallback directory of major stations).
+  - Searchable dropdown list of all EMT bus stops (from the **Valencia Open Data Geoportal** with automatic pagination) and Metrovalencia stations (from the **official FGV API**, backed by a built-in fallback directory of all 141 FGV stations).
   - Supports typing any numeric stop or station ID directly.
 - **Bundled Lovelace Departure Board Card (`custom:vlc-transport-ha-card`)**:
   - **Auto-Registered**: Served directly by the integration at `/vlc_transport_ha/vlc-transport-ha-card.js` — no separate Marketplace (HACS) frontend download or manual Lovelace resource configuration needed.
   - **Visual Editor**: Configure the sensor, custom title, maximum rows (`1`–`15`), and filters straight from the Home Assistant UI.
   - **Official Line Badges**: Displays EMT red badges (`#E30613`) and official Metrovalencia line `1`–`10` color palettes tailored for both **Light** and **Dark** themes.
   - **Smart Filtering**: Whitelist (`include`) or Blacklist (`exclude`) departures by line number (`filter_lines`) and/or destination name (`filter_destinations`, case- and accent-insensitive).
-  - **Full-Schedule Popup Modal**: Clicking the card opens a modal dialog displaying **all** upcoming departures at the stop (bypassing card filters and `max_items` limit), with a quick-action button to open Home Assistant's native entity *More Info* dialog.
-  - **Live Countdown & Resilient Caching**: Updates relative countdowns every 10 seconds in the browser, highlights imminent arrivals (`< 5 min`), automatically hides expired departures, and preserves the last known board with a subtle warning icon if a poll temporarily fails.
+  - **Full-Schedule Popup Modal**: Clicking the card opens a modal dialog displaying **all** upcoming departures at the stop (bypassing card filters and `max_items` limit), with second-level countdown precision (`2 min 52 s`) and live train telemetry (distance in meters, train unit `#`, capacity) for Metrovalencia, plus a quick-action button to open Home Assistant's native entity *More Info* dialog.
+  - **Live Countdown & Resilient Caching**: Uses integer minute rounding on the compact card (`< 60 s` shown as `Now`), updates relative countdowns every 10 seconds in the browser, highlights imminent arrivals (`< 5 min`), automatically hides expired departures, and preserves the last known board with a subtle warning icon if a poll temporarily fails.
 - **Multi-Language Support**:
   - Config Flow and Lovelace Card are localized in **English (`en`)**, **Spanish / Castellano (`es`)**, **Valencian / Catalan (`ca` / `va`)**, and **Russian (`ru`)**.
 
@@ -128,7 +128,7 @@ The integration automatically registers the custom card `custom:vlc-transport-ha
 - **Blacklist (`filter_mode: exclude`)**:
   - Any departure matching **either** `filter_lines` **or** `filter_destinations` is hidden (`OR` logic).
 - **Interactive Full Schedule**:
-  - Clicking anywhere on the card opens a popup modal with the complete unfiltered list of upcoming departures for that stop/station and an info (`i`) button to open the underlying sensor's Home Assistant *More Info* dialog.
+  - Clicking anywhere on the card opens a popup modal with the complete unfiltered list of upcoming departures for that stop/station (including exact seconds and live train distance, unit number, and capacity for Metrovalencia) and an info (`i`) button to open the underlying sensor's Home Assistant *More Info* dialog.
 
 ### YAML Examples
 
@@ -199,16 +199,27 @@ Each configured stop or station creates a `sensor` entity polled every **30 seco
     {
       "line": "3",
       "destination": "Aeroport",
-      "time": "14:25",
-      "timestamp": "2026-11-13T14:25:00+01:00",
-      "provider": "metrovalencia"
+      "time": "14:21",
+      "timestamp": "2026-11-13T14:21:55+01:00",
+      "minutes": 0,
+      "seconds": 45,
+      "provider": "metrovalencia",
+      "vehicle": "4302",
+      "meters": 120
     },
     {
       "line": "5",
       "destination": "Marítim",
-      "time": "14:28",
-      "timestamp": "2026-11-13T14:28:00+01:00",
-      "provider": "metrovalencia"
+      "time": "14:24",
+      "timestamp": "2026-11-13T14:24:02+01:00",
+      "minutes": 2,
+      "seconds": 172,
+      "provider": "metrovalencia",
+      "vehicle": "1166",
+      "meters": 450,
+      "capacity": 397,
+      "latitude": 39.4699,
+      "longitude": -0.3763
     }
   ],
   "last_updated": "2026-11-13T14:21:10.123456+01:00",
@@ -281,11 +292,11 @@ This integration communicates directly with public Valencia transit endpoints wi
 1. **EMT València Stop Directory (Config Flow)**:
    - Valencia Open Data ArcGIS REST Service (`OPENDATA/Trafico/MapServer/226`) with automatic pagination.
 2. **Metrovalencia Station Directory (Config Flow)**:
-   - Valencia Open Data ArcGIS REST Service (`OPENDATA/Trafico/MapServer/221`), backed by an embedded fallback dictionary of 37 popular stations in case the Geoportal catalog is temporarily unreachable.
+   - Official FGV REST API (`https://www.fgv.es/ap18/api/public/es/api/v1/V/estaciones`), backed by an embedded fallback dictionary of all 141 official FGV stations in case the endpoint is temporarily unreachable.
 3. **EMT Real-Time Arrivals (`ValenciaTransitCoordinator`)**:
    - Queries `https://www.emtvalencia.es/EMT/mapfunctions/MapUtilsPetitions.php?sec=getSAE&parada=<stop_id>&adaptados=false`, parses the XML `<estimacion>` payload, fixes Latin-1/UTF-8 encoding quirks, and resolves relative minutes/`Próximo` or `HH:MM` strings into exact timezone-aware timestamps.
 4. **Metrovalencia Real-Time Departures (`ValenciaTransitCoordinator`)**:
-   - Queries `https://geoportal.valencia.es/geoportal-services/api/v1/salidas-metro.html?estacion=<stop_id>&lang=es` and extracts line numbers, destinations, and arrival times into the unified departure format.
+   - Queries the official FGV SAE endpoint `https://www.fgv.es/ap18/api/public/es/api/v1/V/horarios-prevision-3/<stop_id>`, repairs broken character encodings in destination names, sorts upcoming trains across all lines by remaining `seconds`, and exposes live train telemetry (`seconds`, `minutes`, `meters`, `vehicle`, `capacity`, `latitude`, `longitude`).
 
 ---
 

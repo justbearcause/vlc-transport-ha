@@ -13,6 +13,10 @@ const TRANSLATIONS = {
     no_departures: "No upcoming departures",
     now: "Now",
     min: "min",
+    sec: "s",
+    meters: "m",
+    vehicle: "Train #{v}",
+    capacity: "cap. {c}",
     just_now: "Just now",
     sec_ago: "{s}s ago",
     min_ago: "{m}m ago",
@@ -37,6 +41,10 @@ const TRANSLATIONS = {
     no_departures: "Нет ближайших отправлений",
     now: "Сейчас",
     min: "мин",
+    sec: "с",
+    meters: "м",
+    vehicle: "Состав #{v}",
+    capacity: "вмест. {c}",
     just_now: "Только что",
     sec_ago: "{s} с назад",
     min_ago: "{m} мин назад",
@@ -61,6 +69,10 @@ const TRANSLATIONS = {
     no_departures: "No hay próximas salidas",
     now: "Ahora",
     min: "min",
+    sec: "s",
+    meters: "m",
+    vehicle: "Tren #{v}",
+    capacity: "cap. {c}",
     just_now: "Ahora mismo",
     sec_ago: "hace {s} s",
     min_ago: "hace {m} min",
@@ -85,6 +97,10 @@ const TRANSLATIONS = {
     no_departures: "No hi ha pròximes eixides",
     now: "Ara",
     min: "min",
+    sec: "s",
+    meters: "m",
+    vehicle: "Tren #{v}",
+    capacity: "cap. {c}",
     just_now: "Ara mateix",
     sec_ago: "fa {s} s",
     min_ago: "fa {m} min",
@@ -233,11 +249,22 @@ const CARD_STYLES = `
     padding: var(--ha-space-3, 12px) var(--ha-space-4, 16px) var(--ha-space-4, 16px);
     margin-top: 0;
   }
-  .name, .dest {
+  .name, .dest, .dest-meta {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .dest-wrap {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .dest-meta {
+    font-size: var(--ha-tile-info-secondary-font-size, var(--ha-font-size-s, 12px));
+    line-height: var(--ha-tile-info-secondary-line-height, var(--ha-line-height-condensed, 16px));
+    color: var(--ha-tile-info-secondary-color, var(--secondary-text-color));
   }
   .name {
     font-size: var(--ha-tile-info-primary-font-size, var(--ha-font-size-m, 14px));
@@ -735,17 +762,31 @@ class VlcTransportHaCard extends HTMLElement {
     return filtered.slice(0, Number(this.config.max_items) || 5);
   }
 
-  // Compute remaining departure time in rounded minutes, or null if unknown
-  _getDepartureMinutes(dep) {
+  // Compute remaining departure time in integer seconds, or null if unknown
+  _getDepartureSeconds(dep) {
     if (dep.timestamp) {
       const targetMs = Date.parse(dep.timestamp);
       if (!isNaN(targetMs)) {
-        const diffSec = (targetMs - Date.now()) / 1000;
-        return Math.max(0, Math.round(diffSec / 60));
+        return Math.max(0, Math.floor((targetMs - Date.now()) / 1000));
       }
     }
+    if (typeof dep.seconds === "number" && !isNaN(dep.seconds)) {
+      return Math.max(0, Math.floor(dep.seconds));
+    }
+    return null;
+  }
 
-    const exactTime = dep.time || dep.minutes || "—";
+  // Compute remaining departure time in integer minutes, or null if unknown
+  _getDepartureMinutes(dep) {
+    const diffSec = this._getDepartureSeconds(dep);
+    if (diffSec !== null) {
+      return Math.floor(diffSec / 60);
+    }
+
+    const exactTime = dep.time ?? dep.minutes ?? "—";
+    if (typeof exactTime === "number" && !isNaN(exactTime)) {
+      return Math.max(0, Math.floor(exactTime));
+    }
     if (typeof exactTime === "string" && exactTime.includes(":")) {
       const parts = exactTime.split(":");
       if (parts.length >= 2) {
@@ -755,9 +796,9 @@ class VlcTransportHaCard extends HTMLElement {
           const now = new Date();
           const target = new Date(now);
           target.setHours(hours, minutes, 0, 0);
-          let diffSec = (target.getTime() - now.getTime()) / 1000;
-          if (diffSec < -600) diffSec += 86400;
-          return Math.max(0, Math.round(diffSec / 60));
+          let fallbackSec = (target.getTime() - now.getTime()) / 1000;
+          if (fallbackSec < -600) fallbackSec += 86400;
+          return Math.max(0, Math.round(fallbackSec / 60));
         }
       }
     }
@@ -765,10 +806,23 @@ class VlcTransportHaCard extends HTMLElement {
     return null;
   }
 
-  // Format departure time: < 60 min as relative minutes, >= 60 min as exact HH:MM
-  _formatDepartureTime(dep, t) {
-    const exactTime = dep.time || dep.minutes || "—";
+  // Format departure time: < 60 min as relative minutes (with seconds in modal), >= 60 min as exact HH:MM
+  _formatDepartureTime(dep, t, { showSeconds = false } = {}) {
+    const exactTime = String(dep.time ?? dep.minutes ?? "—");
     const diffMin = this._getDepartureMinutes(dep);
+
+    if (showSeconds && typeof dep.seconds === "number" && !isNaN(dep.seconds)) {
+      const diffSec = this._getDepartureSeconds(dep);
+      if (diffSec !== null && diffSec < 3600) {
+        if (diffSec <= 0) return t.now;
+        const mins = Math.floor(diffSec / 60);
+        const secs = diffSec % 60;
+        if (mins === 0) {
+          return `${secs} ${t.sec}`;
+        }
+        return `${mins} ${t.min} ${secs} ${t.sec}`;
+      }
+    }
 
     if (diffMin !== null) {
       if (diffMin === 0) return t.now;
@@ -776,6 +830,20 @@ class VlcTransportHaCard extends HTMLElement {
     }
 
     return exactTime;
+  }
+
+  _formatDepartureMeta(dep, t) {
+    const parts = [];
+    if (typeof dep.meters === "number" && !isNaN(dep.meters) && dep.meters >= 0) {
+      parts.push(`${Math.round(dep.meters)} ${t.meters}`);
+    }
+    if (dep.vehicle !== undefined && dep.vehicle !== null && String(dep.vehicle).trim() !== "") {
+      parts.push(t.vehicle.replace("{v}", String(dep.vehicle).trim()));
+    }
+    if (typeof dep.capacity === "number" && !isNaN(dep.capacity) && dep.capacity > 0) {
+      parts.push(t.capacity.replace("{c}", Math.round(dep.capacity)));
+    }
+    return parts.join(" · ");
   }
 
   // Format header update timestamp: < 60s in seconds, < 60m in minutes, >= 60m as exact HH:MM
@@ -894,20 +962,24 @@ class VlcTransportHaCard extends HTMLElement {
     `;
   }
 
-  _renderRows(departuresList, provider, t) {
+  _renderRows(departuresList, provider, t, { detailed = false } = {}) {
     if (!departuresList.length) {
       return `<div class="empty">${escapeHtml(t.no_departures)}</div>`;
     }
     return departuresList
       .map((d) => {
         const diffMin = this._getDepartureMinutes(d);
-        const timeLabel = this._formatDepartureTime(d, t);
+        const timeLabel = this._formatDepartureTime(d, t, { showSeconds: detailed });
         const timeClass = diffMin !== null && diffMin < 5 ? "time soon" : "time";
         const [background, color] = this._getBadgeColors(provider, d.line);
+        const metaText = detailed ? this._formatDepartureMeta(d, t) : "";
+        const destHtml = metaText
+          ? `<div class="dest-wrap"><span class="dest" title="${escapeHtml(d.destination || "")}">${escapeHtml(d.destination || "")}</span><span class="dest-meta" title="${escapeHtml(metaText)}">${escapeHtml(metaText)}</span></div>`
+          : `<span class="dest" title="${escapeHtml(d.destination || "")}">${escapeHtml(d.destination || "")}</span>`;
         return `
           <div class="row">
             <span class="line-badge" style="background:${background};color:${color}">${escapeHtml(d.line || "—")}</span>
-            <span class="dest" title="${escapeHtml(d.destination || "")}">${escapeHtml(d.destination || "")}</span>
+            ${destHtml}
             <span class="${timeClass}">${escapeHtml(timeLabel)}</span>
           </div>
         `;
@@ -936,7 +1008,9 @@ class VlcTransportHaCard extends HTMLElement {
         applyFilters: false,
         applyLimit: false,
       });
-      const modalRowsHtml = this._renderRows(allDepartures, provider, t);
+      const modalRowsHtml = this._renderRows(allDepartures, provider, t, {
+        detailed: true,
+      });
       dialogHtml = `
         <dialog class="schedule-dialog" open aria-label="${escapeHtml(stopTitle)}">
           <div class="dialog-header">

@@ -32,52 +32,157 @@ EMT_STOPS_API_URL = (
     "&returnGeometry=false&f=json"
 )
 
-# Open Data Valencia dataset URL for all FGV (Metrovalencia) stations
+# Official FGV (Metrovalencia) API endpoint for all stations
 FGV_STATIONS_API_URL = (
-    "https://geoportal.valencia.es/server/rest/services/OPENDATA/Trafico/"
-    "MapServer/221/query?where=1%3D1&outFields=codigo,nombre"
-    "&returnGeometry=false&f=json"
+    "https://www.fgv.es/ap18/api/public/es/api/v1/V/estaciones"
 )
 
-# Fallback directory of popular metro and tram stations (used if API is unavailable)
+# Fallback directory of official FGV metro and tram stations (used if API is unavailable)
 FALLBACK_FGV_STATIONS: dict[str, str] = {
-    "3": "Empalme",
-    "9": "Beniferri",
-    "10": "Campanar",
-    "11": "Túria",
+    "1": "Rafelbunyol",
+    "2": "La Pobla de Farnals",
+    "3": "Massamagrell",
+    "4": "Museros",
+    "5": "Albalat dels Sorells",
+    "6": "Foios",
+    "7": "Meliana",
+    "8": "Almàssera",
+    "9": "Alboraia Peris Aragó",
+    "10": "Alboraia Palmaret",
+    "11": "Machado",
     "12": "Benimaclet",
-    "13": "Machado",
+    "13": "Facultats - Manuel Broseta",
     "14": "Alameda",
     "15": "Colón",
     "16": "Xàtiva",
     "17": "Àngel Guimerà",
-    "19": "Jesús",
-    "20": "Patraix",
-    "22": "Safranar",
-    "24": "Plaça Espanya",
-    "28": "Torrent",
-    "50": "Mislata",
-    "54": "Quart de Poblet",
-    "59": "Manises",
-    "60": "Rosas",
-    "69": "Aeroport",
-    "71": "Facultats - Manuel Broseta",
-    "72": "Aragó",
-    "73": "Amistat",
-    "74": "Ayora",
-    "75": "Marítim",
-    "80": "Florista",
-    "83": "Pont de Fusta",
-    "105": "Universitat Politècnica",
-    "106": "La Carrasca",
-    "107": "Tarongers - Ernest Lluch",
-    "117": "Garbí",
-    "119": "Palau de Congressos",
-    "121": "Vicent Zaragozà",
-    "180": "Alacant",
-    "183": "Russafa",
-    "186": "Ciutat Arts i Ciències - Justícia",
-    "188": "Natzaret",
+    "18": "Av. del Cid",
+    "19": "Nou d'Octubre",
+    "20": "Mislata",
+    "21": "Mislata Almassil",
+    "22": "Ayora",
+    "23": "Amistat",
+    "24": "Aragó",
+    "25": "Jesús",
+    "26": "Patraix",
+    "27": "Safranar",
+    "28": "Sant Isidre",
+    "30": "València Sud",
+    "31": "Paiporta",
+    "32": "Picanya",
+    "33": "Torrent",
+    "34": "Torrent Avinguda",
+    "35": "Castelló",
+    "36": "Alberic",
+    "37": "Massalavés",
+    "38": "Montortal",
+    "39": "L'Alcúdia",
+    "40": "Benimodo",
+    "41": "Carlet",
+    "42": "Ausiàs March",
+    "43": "Alginet",
+    "44": "Font Almaguer",
+    "45": "Espioca",
+    "46": "Omet",
+    "47": "Picassent",
+    "48": "Sant Ramon",
+    "49": "Realón",
+    "50": "Col·legi El Vedat",
+    "51": "Pl. Espanya",
+    "52": "Túria",
+    "53": "Campanar",
+    "54": "Beniferri",
+    "55": "Empalme",
+    "56": "Cantereria",
+    "57": "Benimàmet",
+    "58": "Les Carolines - Fira",
+    "59": "Campament",
+    "60": "Paterna",
+    "61": "Santa Rita",
+    "62": "Fuente del Jarro",
+    "63": "La Canyada",
+    "64": "La Vallesa",
+    "65": "Entrepins",
+    "66": "Montesol",
+    "67": "L'Eliana",
+    "68": "La Pobla de Vallbona",
+    "69": "Fondo de Benaguasil",
+    "70": "Benaguasil",
+    "71": "Llíria",
+    "72": "Burjassot",
+    "73": "Burjassot - Godella",
+    "74": "Godella",
+    "75": "Rocafort",
+    "76": "Massarrojos",
+    "77": "Moncada - Alfara",
+    "78": "Seminari - CEU",
+    "79": "Masies",
+    "80": "Horta Vella",
+    "81": "Platja Malva-rosa",
+    "82": "Platja les Arenes",
+    "83": "Dr. Lluch",
+    "84": "Cabanyal",
+    "85": "La Cadena",
+    "86": "Beteró",
+    "87": "Tarongers - Ernest Lluch",
+    "88": "La Carrasca",
+    "89": "Universitat Politècnica",
+    "90": "Vicente Zaragozà",
+    "91": "Trinitat",
+    "92": "Pont de Fusta",
+    "93": "Sagunt",
+    "94": "Reus",
+    "95": "Marxalenes",
+    "96": "Trànsits",
+    "97": "Benicalap",
+    "98": "Garbí",
+    "99": "Florista",
+    "100": "Palau de Congressos",
+    "101": "La Granja",
+    "102": "Sant Joan",
+    "103": "Campus",
+    "104": "Vicent Andrés Estellés",
+    "105": "À Punt",
+    "106": "Fira València",
+    "107": "Bétera",
+    "108": "El Clot",
+    "109": "Bailén",
+    "110": "Mas del Rosari",
+    "111": "La Coma",
+    "112": "Tomás y Valiente",
+    "113": "Parc Científic",
+    "114": "Ll. Llarga - Terramelar",
+    "115": "Marítim",
+    "117": "Quart de Poblet",
+    "118": "Salt de l'Aigua",
+    "119": "Manises",
+    "120": "Roses",
+    "121": "Aeroport",
+    "122": "Francesc Cubells",
+    "123": "Grau - La Marina",
+    "126": "Neptú",
+    "127": "Canyamelar",
+    "128": "Alfauir",
+    "129": "Orriols",
+    "130": "Estadi Ciutat de València",
+    "131": "Sant Miquel dels Reis",
+    "132": "Tossal del Rei",
+    "183": "La Cova",
+    "184": "La Presa",
+    "185": "Masia de Traver",
+    "186": "Riba-roja de Túria",
+    "188": "València la Vella",
+    "190": "Alacant",
+    "191": "Russafa",
+    "192": "Amado Granell - Montolivet",
+    "193": "Quatre Carreres",
+    "194": "Ciutat Arts i Ciències - Justícia",
+    "195": "Oceanogràfic",
+    "196": "Moreres",
+    "197": "Natzaret",
+    "198": "Font del Barranc",
+    "200": "Faitanar",
+    "201": "Gallipont - Torre del Virrei",
 }
 
 
@@ -312,7 +417,7 @@ class ValenciaTransitConfigFlow(ConfigFlow, domain=DOMAIN):
         return stops
 
     async def _async_fetch_fgv_stations(self) -> dict[str, str]:
-        """Fetch full list of FGV stations from Valencia Geoportal with logging."""
+        """Fetch full list of FGV stations from the official FGV API with fallback."""
         stations = dict(FALLBACK_FGV_STATIONS)
         session = async_get_clientsession(self.hass)
         try:
@@ -330,18 +435,20 @@ class ValenciaTransitConfigFlow(ConfigFlow, domain=DOMAIN):
                 # content_type=None in case the server returns JSON with a text/plain header
                 data = await resp.json(content_type=None)
 
-                # 1. Valencia Geoportal ArcGIS REST / GeoJSON format: {"features": [...]}
-                if isinstance(data, dict) and "features" in data:
+                if isinstance(data, list):
+                    rows = data
+                elif isinstance(data, dict) and "estaciones" in data:
+                    rows = data["estaciones"]
+                elif isinstance(data, dict) and "paradas" in data:
+                    rows = data["paradas"]
+                elif isinstance(data, dict) and "features" in data:
                     rows = [
                         feat.get("attributes") or feat.get("properties") or {}
                         for feat in data["features"]
                         if isinstance(feat, dict)
                     ]
-                # 2. OpenDataSoft v2.1 format: {"results": [...]} or flat list
                 elif isinstance(data, dict) and "results" in data:
                     rows = data["results"]
-                elif isinstance(data, list):
-                    rows = data
                 else:
                     _LOGGER.warning(
                         "Unexpected JSON structure for FGV stations list: %s",
@@ -353,8 +460,19 @@ class ValenciaTransitConfigFlow(ConfigFlow, domain=DOMAIN):
                 for row in rows:
                     if not isinstance(row, dict):
                         continue
-                    raw_code = row.get("codigo") or row.get("CODIGO")
-                    raw_name = row.get("nombre") or row.get("NOMBRE")
+                    raw_code = (
+                        row.get("estacion_id_FGV")
+                        or row.get("estacion_id_fgv")
+                        or row.get("id_fgv")
+                        or row.get("id")
+                        or row.get("codigo")
+                        or row.get("CODIGO")
+                    )
+                    raw_name = (
+                        row.get("nombre")
+                        or row.get("NOMBRE")
+                        or row.get("name")
+                    )
                     if raw_code is not None and raw_name:
                         code = str(raw_code).strip()
                         name = str(raw_name).strip()

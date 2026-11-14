@@ -278,6 +278,106 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stations, config_flow.FALLBACK_FGV_STATIONS)
         self.assertNotIn("ssl", self.session.calls[-1][1])
 
+        # Official FGV /estaciones JSON array response
+        self.session.response = Response(
+            json_data=[
+                {"estacion_id_FGV": 16, "nombre": "Xàtiva"},
+                {"estacion_id_FGV": 999, "nombre": "Nueva Estación"},
+            ]
+        )
+        stations_live = await flow._async_fetch_fgv_stations()
+        self.assertEqual(stations_live["16"], "Xàtiva")
+        self.assertEqual(stations_live["999"], "Nueva Estación")
+
+    async def test_metro_realtime_fgv_api_parsing_sorting_and_errors(self):
+        self.coordinator.provider = "metrovalencia"
+        self.coordinator.stop_id = "16"
+        self.session.response = Response(
+            json_data={
+                "aforo_bloqueado": {"desde": None, "hasta": None},
+                "previsiones": [
+                    {
+                        "line": 5,
+                        "line_id": 5,
+                        "linea_id_interna": 10,
+                        "trains": [
+                            {
+                                "cabecera": False,
+                                "capacity": 397,
+                                "destino": "Mar?tim",
+                                "latitude": 39.4699,
+                                "line_id": 5,
+                                "longitude": -0.3763,
+                                "meters": 450,
+                                "seconds": 172,
+                                "vehicle": "1166",
+                            },
+                            {
+                                "destino": "Invalid negative",
+                                "seconds": -5,
+                            },
+                        ],
+                    },
+                    {
+                        "line": 3,
+                        "line_id": 3,
+                        "trains": [
+                            {
+                                "destino": "Aeroport",
+                                "seconds": 45,
+                                "meters": 120,
+                                "vehicle": "4302",
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
+
+        result = await self.coordinator._async_update_data()
+        self.assertEqual(
+            self.session.calls[-1][0],
+            "https://www.fgv.es/ap18/api/public/es/api/v1/V/horarios-prevision-3/16",
+        )
+        self.assertEqual(len(result), 2)
+        # Sorted by seconds ascending (45s first, then 172s)
+        self.assertEqual(result[0]["line"], "3")
+        self.assertEqual(result[0]["destination"], "Aeroport")
+        self.assertEqual(result[0]["seconds"], 45)
+        self.assertEqual(result[0]["minutes"], 0)
+        self.assertEqual(result[0]["time"], "00:00")
+        self.assertEqual(result[0]["timestamp"], "2026-11-14T00:00:44+01:00")
+        self.assertEqual(result[0]["meters"], 120)
+        self.assertEqual(result[0]["vehicle"], "4302")
+
+        self.assertEqual(result[1]["line"], "5")
+        self.assertEqual(result[1]["destination"], "Marítim")
+        self.assertEqual(result[1]["seconds"], 172)
+        self.assertEqual(result[1]["minutes"], 2)
+        self.assertEqual(result[1]["time"], "00:02")
+        self.assertEqual(result[1]["timestamp"], "2026-11-14T00:02:51+01:00")
+        self.assertEqual(result[1]["meters"], 450)
+        self.assertEqual(result[1]["vehicle"], "1166")
+        self.assertEqual(result[1]["capacity"], 397)
+        self.assertEqual(result[1]["latitude"], 39.4699)
+        self.assertEqual(result[1]["longitude"], -0.3763)
+
+        # Empty previsiones returns empty list without error
+        self.session.response = Response(json_data={"previsiones": []})
+        self.assertEqual(await self.coordinator._async_update_data(), [])
+
+        # Error responses raise UpdateFailed
+        for bad_resp, expected_msg in (
+            (Response(status=502), "HTTP status 502"),
+            (Response(body="not json"), "Invalid JSON"),
+            (Response(json_data={"resultado": "Sin servicio"}), "Sin servicio"),
+            (Response(json_data={"unexpected": 1}), "missing previsiones"),
+        ):
+            with self.subTest(expected_msg=expected_msg):
+                self.session.response = bad_resp
+                with self.assertRaisesRegex(UpdateFailed, expected_msg):
+                    await self.coordinator._async_update_data()
+
     async def test_emt_stops_fetch_pagination_and_step(self):
         flow = config_flow.ValenciaTransitConfigFlow()
         flow.hass = self.hass

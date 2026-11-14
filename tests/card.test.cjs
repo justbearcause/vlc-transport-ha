@@ -560,3 +560,60 @@ test('modal closes on close button, backdrop click, Escape key, entity change, a
   card._openDialog();
   assert.equal(card._dialogOpen, false);
 });
+
+test('card uses integer minute rounding while modal shows seconds and live train telemetry', () => {
+  const card = setup();
+  const metroDeps = [
+    {
+      line: '3',
+      destination: 'Aeroport',
+      time: '12:00',
+      timestamp: '2026-11-13T12:00:45Z',
+      seconds: 45,
+      minutes: 0,
+      meters: 120,
+      vehicle: '4302',
+    },
+    {
+      line: '5',
+      destination: 'Marítim',
+      time: '12:02',
+      timestamp: '2026-11-13T12:02:52Z',
+      seconds: 172,
+      minutes: 2,
+      meters: 450,
+      vehicle: '1166',
+      capacity: 397,
+    },
+  ];
+
+  // Compact card view: integer floor minutes (45s -> Now, 172s -> 2 min) and no telemetry subtitle
+  setState(card, '12:00', {
+    friendly_name: 'Metrovalencia Xàtiva',
+    provider: 'metrovalencia',
+    departures: metroDeps,
+  });
+  const cardHtml = card.shadowRoot.innerHTML;
+  assert.match(cardHtml, /<span class="time soon">Now<\/span>/);
+  assert.match(cardHtml, /<span class="time soon">2 min<\/span>/);
+  assert.doesNotMatch(cardHtml, /2 min 52 s|450 m|Train #1166/);
+
+  // Open modal: shows seconds (45 s, 2 min 52 s) and telemetry subtitle
+  card._openDialog();
+  const modalHtml = card.shadowRoot.innerHTML;
+  assert.match(modalHtml, /<span class="time soon">45 s<\/span>/);
+  assert.match(modalHtml, /<span class="time soon">2 min 52 s<\/span>/);
+  assert.match(modalHtml, /120 m · Train #4302/);
+  assert.match(modalHtml, /450 m · Train #1166 · cap\. 397/);
+
+  // Russian localization in modal
+  setState(card, '12:00', {
+    friendly_name: 'Metrovalencia Xàtiva',
+    provider: 'metrovalencia',
+    departures: metroDeps,
+  }, 'sensor.stop', { language: 'ru' });
+  const ruModalHtml = card.shadowRoot.innerHTML;
+  assert.match(ruModalHtml, /<span class="time soon">45 с<\/span>/);
+  assert.match(ruModalHtml, /<span class="time soon">2 мин 52 с<\/span>/);
+  assert.match(ruModalHtml, /450 м · Состав #1166 · вмест\. 397/);
+});

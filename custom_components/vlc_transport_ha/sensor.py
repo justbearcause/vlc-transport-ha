@@ -24,17 +24,51 @@ from homeassistant.helpers.update_coordinator import (
 
 VLC_TZ = ZoneInfo("Europe/Madrid")
 
-# Regex to extract: (1) line number, (2) destination in <b>...</b>, (3) arrival time in <span>...</span>
-FGV_ROW_RE = re.compile(
-    r'class="imagenParada".*?<span>\s*(\d+)\s*-[^<]*</span>.*?<b>([^<]+)</b>\s*-\s*<span>\s*([^<]+?)\s*</span>',
-    re.IGNORECASE | re.DOTALL,
-)
-
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "vlc_transport_ha"
 EMT_URL = "https://www.emtvalencia.es/EMT/mapfunctions/MapUtilsPetitions.php"
 EMT_NO_ESTIMATIONS = frozenset({"SENSE ESTIMACIONS", "SIN ESTIMACIONES"})
+FGV_PREVISION_URL = (
+    "https://www.fgv.es/ap18/api/public/es/api/v1/V/horarios-prevision-3"
+)
+
+FGV_ENCODING_FIXES: tuple[tuple[str, str], ...] = (
+    ("Mar?tim", "Marítim"),
+    ("Arag?", "Aragó"),
+    ("Castell?", "Castelló"),
+    ("B?tera", "Bétera"),
+    ("Ll?ria", "Llíria"),
+    ("T?ria", "Túria"),
+    ("Val?ncia", "València"),
+    ("?ngel", "Àngel"),
+    ("Guimer?", "Guimerà"),
+    ("Jes?s", "Jesús"),
+    ("Nept?", "Neptú"),
+    ("Beter?", "Beteró"),
+    ("Garb?", "Garbí"),
+    ("Zaragoz?", "Zaragozà"),
+    ("Andr?s", "Andrés"),
+    ("Estell?s", "Estellés"),
+    ("Tr?nsits", "Trànsits"),
+    ("Oceanogr?fic", "Oceanogràfic"),
+    ("Ci?ncies", "Ciències"),
+    ("Just?cia", "Justícia"),
+    ("Benim?met", "Benimàmet"),
+    ("Alm?ssera", "Almàssera"),
+    ("Alc?dia", "Alcúdia"),
+    ("Massalav?s", "Massalavés"),
+    ("Ausi?s", "Ausiàs"),
+    ("Real?n", "Realón"),
+    ("Bail?n", "Bailén"),
+    ("Cient?fic", "Científic"),
+    ("Tom?s", "Tomás"),
+    ("Col?legi", "Col·legi"),
+    ("X?tiva", "Xàtiva"),
+    ("Col?n", "Colón"),
+    ("Polit?cnica", "Politècnica"),
+    ("? Punt", "À Punt"),
+)
 
 
 async def async_setup_entry(
@@ -190,15 +224,12 @@ class ValenciaTransitCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
         return departures
 
     async def _fetch_metrovalencia(self) -> list[dict[str, Any]]:
-        """Fetch train/tram predictions from Valencia Geoportal official endpoint."""
+        """Fetch real-time train/tram predictions from the official FGV API."""
         session = async_get_clientsession(self.hass)
-        url = (
-            "https://geoportal.valencia.es/geoportal-services/api/v1/"
-            f"salidas-metro.html?estacion={self.stop_id}&lang=es"
-        )
+        url = f"{FGV_PREVISION_URL}/{self.stop_id}"
         headers = {
             "User-Agent": "Mozilla/5.0 (compatible; HomeAssistant/ValenciaTransit)",
-            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept": "application/json",
         }
 
         async with session.get(
@@ -206,38 +237,146 @@ class ValenciaTransitCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
         ) as resp:
             if resp.status != 200:
                 raise UpdateFailed(
-                    f"Metrovalencia Geoportal returned HTTP status {resp.status}"
+                    f"Metrovalencia FGV API returned HTTP status {resp.status}"
                 )
-            text = await resp.text()
-            return self._parse_fgv_response(text)
+            try:
+                payload = await resp.json(content_type=None)
+            except ValueError as err:
+                raise UpdateFailed(
+                    f"Invalid JSON response from Metrovalencia FGV API: {err}"
+                ) from err
+            return self._parse_fgv_response(payload)
 
-    def _parse_fgv_response(self, html_text: str) -> list[dict[str, Any]]:
-        """Parse HTML and normalize all departures to exact HH:MM and ISO timestamp."""
-        if not html_text:
-            return []
+    def _clean_fgv_text(self, text: str) -> str:
+        """Fix broken character encodings returned in FGV destination strings."""
+        cleaned = html.unescape(text or "").strip()
+        try:
+            cleaned = cleaned.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+        if "\ufffd" in cleaned:
+            cleaned = cleaned.replace("\ufffd", "?")
+        if "?" in cleaned:
+            for broken, fixed in FGV_ENCODING_FIXES:
+                if broken in cleaned:
+                    cleaned = cleaned.replace(broken, fixed)
+        return cleaned.strip()
 
-        now = datetime.now(VLC_TZ)
+    def _parse_fgv_response(self, payload: Any) -> list[dict[str, Any]]:
+        """Parse official FGV real-time JSON payload into sorted departures."""
+        if isinstance(payload, list):
+            previsiones = payload
+        elif isinstance(payload, dict):
+            if "previsiones" not in payload:
+                if "resultado" in payload:
+                    raise UpdateFailed(
+                        f"Metrovalencia FGV API error: {payload['resultado']}"
+                    )
+                raise UpdateFailed(
+                    "Invalid JSON response from Metrovalencia FGV API: missing previsiones"
+                )
+            previsiones = payload.get("previsiones") or []
+            if not isinstance(previsiones, list):
+                raise UpdateFailed(
+                    "Invalid JSON response from Metrovalencia FGV API: previsiones is not a list"
+                )
+        else:
+            raise UpdateFailed(
+                "Invalid JSON response from Metrovalencia FGV API"
+            )
+
+        now = datetime.now(VLC_TZ).replace(microsecond=0)
         departures: list[dict[str, Any]] = []
 
-        for match in FGV_ROW_RE.finditer(html_text):
-            line = match.group(1).strip()
-            destination = html.unescape(match.group(2)).strip()
-            raw_time = match.group(3).strip()
-
-            dep_dt = self._resolve_exact_datetime(now, raw_time)
-            if dep_dt is None:
+        for line_group in previsiones:
+            if not isinstance(line_group, dict):
+                continue
+            group_line = (
+                line_group.get("line")
+                if line_group.get("line") is not None
+                else line_group.get("line_id")
+            )
+            trains = line_group.get("trains")
+            if not isinstance(trains, list):
                 continue
 
-            departures.append(
-                {
+            for train in trains:
+                if not isinstance(train, dict):
+                    continue
+                raw_seconds = train.get("seconds")
+                if isinstance(raw_seconds, bool) or raw_seconds is None:
+                    continue
+                try:
+                    seconds = int(raw_seconds)
+                except (TypeError, ValueError):
+                    continue
+                if seconds < 0:
+                    continue
+
+                raw_dest = str(train.get("destino") or "").strip()
+                if not raw_dest:
+                    continue
+                destination = self._clean_fgv_text(raw_dest)
+
+                raw_line = (
+                    group_line
+                    if group_line is not None
+                    else train.get("line_id")
+                )
+                line = (
+                    str(raw_line).strip()
+                    if raw_line is not None and str(raw_line).strip()
+                    else "—"
+                )
+
+                dep_dt = now + timedelta(seconds=seconds)
+                minutes = seconds // 60
+
+                dep_item: dict[str, Any] = {
                     "line": line,
                     "destination": destination,
                     "time": dep_dt.strftime("%H:%M"),
                     "timestamp": dep_dt.isoformat(),
+                    "minutes": minutes,
+                    "seconds": seconds,
                     "provider": "metrovalencia",
                 }
-            )
 
+                vehicle = train.get("vehicle")
+                if vehicle is not None and str(vehicle).strip():
+                    dep_item["vehicle"] = str(vehicle).strip()
+
+                meters = train.get("meters")
+                if (
+                    not isinstance(meters, bool)
+                    and isinstance(meters, (int, float))
+                    and meters >= 0
+                ):
+                    dep_item["meters"] = int(meters)
+
+                capacity = train.get("capacity")
+                if (
+                    not isinstance(capacity, bool)
+                    and isinstance(capacity, (int, float))
+                    and capacity > 0
+                ):
+                    dep_item["capacity"] = int(capacity)
+
+                lat = train.get("latitude")
+                lon = train.get("longitude")
+                if (
+                    not isinstance(lat, bool)
+                    and not isinstance(lon, bool)
+                    and isinstance(lat, (int, float))
+                    and isinstance(lon, (int, float))
+                    and (lat != 0 or lon != 0)
+                ):
+                    dep_item["latitude"] = float(lat)
+                    dep_item["longitude"] = float(lon)
+
+                departures.append(dep_item)
+
+        departures.sort(key=lambda item: item["seconds"])
         return departures
 
     def _resolve_exact_datetime(self, now: datetime, value: str) -> datetime | None:
