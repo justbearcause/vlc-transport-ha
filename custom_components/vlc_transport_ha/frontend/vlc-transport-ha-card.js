@@ -353,77 +353,10 @@ const CARD_STYLES = `
   }
   .warning-message { min-width: 0; overflow-wrap: anywhere; }
   .schedule-dialog {
-    width: min(92vw, 480px);
-    max-width: 480px;
-    max-height: min(85vh, 680px);
-    margin: auto;
-    padding: 0;
-    border: none;
-    border-radius: var(--ha-dialog-border-radius, var(--ha-border-radius-lg, 16px));
-    background: var(--ha-dialog-surface-background, var(--card-background-color, var(--primary-background-color, #fff)));
-    color: var(--primary-text-color);
-    box-shadow: var(--ha-dialog-box-shadow, 0 8px 32px rgba(0, 0, 0, 0.28));
-    overflow: hidden;
-  }
-  .schedule-dialog[open] {
-    display: flex;
-    flex-direction: column;
-  }
-  .schedule-dialog::backdrop {
-    background: var(--mdc-dialog-scrim-color, rgba(0, 0, 0, 0.6));
-  }
-  .dialog-header {
-    display: flex;
-    align-items: center;
-    gap: var(--ha-space-2, 8px);
-    padding: var(--ha-space-3, 12px);
-    border-bottom: 1px solid var(--divider-color, rgba(127, 127, 127, 0.2));
-    flex-shrink: 0;
-  }
-  .dialog-title-wrap {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .dialog-title {
-    font-size: var(--ha-font-size-l, 16px);
-    font-weight: var(--ha-font-weight-medium, 500);
-    line-height: 22px;
-    color: var(--primary-text-color);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--secondary-text-color);
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: background-color 150ms ease, color 150ms ease;
-  }
-  .icon-btn:hover {
-    background-color: rgba(127, 127, 127, 0.12);
-    color: var(--primary-text-color);
-  }
-  .icon-btn:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
+    --dialog-content-padding: var(--ha-space-3, 12px) var(--ha-space-6, 24px) calc(var(--ha-space-6, 24px) + env(safe-area-inset-bottom, 0px));
   }
   .dialog-content {
-    padding: var(--ha-space-3, 12px) var(--ha-space-4, 16px) var(--ha-space-4, 16px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    flex: 1 1 auto;
+    min-width: 0;
   }
 `;
 
@@ -678,12 +611,9 @@ class VlcTransportHaCard extends HTMLElement {
     if (!this._dialogOpen) return;
     this._dialogOpen = false;
     const dialog = this.shadowRoot?.querySelector?.(".schedule-dialog");
-    if (dialog && typeof dialog.close === "function" && dialog.open) {
-      try {
-        dialog.close();
-      } catch (_err) {
-        // Ignore if dialog is not open in DOM
-      }
+    if (dialog) {
+      dialog.open = false;
+      dialog.removeAttribute?.("open");
     }
     this._renderFromHass();
   }
@@ -990,9 +920,6 @@ class VlcTransportHaCard extends HTMLElement {
   render(data, t) {
     const { title, stopTitle, provider, departures, lastUpdated, hasError, errorMessage } = data;
     const updatedLabel = this._formatLastUpdated(lastUpdated, t);
-    const prevScrollTop = this._dialogOpen
-      ? this.shadowRoot?.querySelector?.(".dialog-content")?.scrollTop ?? 0
-      : 0;
 
     const currentDepartures = this._getCurrentDepartures(departures);
     this._isPlaceholder = false;
@@ -1001,36 +928,101 @@ class VlcTransportHaCard extends HTMLElement {
     const errorIconHtml = hasError
       ? `<ha-icon class="error-icon" icon="mdi:alert-circle-outline" title="${escapeHtml(errorMessage)}" aria-label="${escapeHtml(errorMessage)}"></ha-icon>`
       : "";
+    const statusMetaHtml = `
+      ${errorIconHtml}
+      <span>${escapeHtml(updatedLabel)}</span>
+    `;
 
+    let modalRowsHtml = "";
     let dialogHtml = "";
     if (this._dialogOpen) {
       const allDepartures = this._getCurrentDepartures(departures, {
         applyFilters: false,
         applyLimit: false,
       });
-      const modalRowsHtml = this._renderRows(allDepartures, provider, t, {
+      modalRowsHtml = this._renderRows(allDepartures, provider, t, {
         detailed: true,
       });
       dialogHtml = `
-        <dialog class="schedule-dialog" open aria-label="${escapeHtml(stopTitle)}">
-          <div class="dialog-header">
-            <button class="icon-btn dialog-close" type="button" title="${escapeHtml(t.close)}" aria-label="${escapeHtml(t.close)}">
-              <ha-icon icon="mdi:close" aria-hidden="true"></ha-icon>
-            </button>
-            <div class="dialog-title-wrap">
-              <div class="dialog-title" title="${escapeHtml(stopTitle)}">${escapeHtml(stopTitle)}</div>
-              <div class="status-meta">
-                ${errorIconHtml}
-                <span>${escapeHtml(updatedLabel)}</span>
-              </div>
-            </div>
-            <button class="icon-btn dialog-more-info" type="button" title="${escapeHtml(t.more_info)}" aria-label="${escapeHtml(t.more_info)}">
-              <ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon>
-            </button>
+        <ha-adaptive-dialog
+          class="schedule-dialog"
+          open
+          allow-mode-change
+          header-title="${escapeHtml(stopTitle)}"
+          aria-label="${escapeHtml(stopTitle)}"
+        >
+          <ha-icon-button
+            slot="headerNavigationIcon"
+            data-dialog="close"
+            class="dialog-close"
+            label="${escapeHtml(t.close)}"
+            title="${escapeHtml(t.close)}"
+            aria-label="${escapeHtml(t.close)}"
+          >
+            <ha-icon icon="mdi:close" aria-hidden="true"></ha-icon>
+          </ha-icon-button>
+          <div slot="headerSubtitle" class="status-meta dialog-subtitle">
+            ${statusMetaHtml}
           </div>
+          <ha-icon-button
+            slot="headerActionItems"
+            class="dialog-more-info"
+            label="${escapeHtml(t.more_info)}"
+            title="${escapeHtml(t.more_info)}"
+            aria-label="${escapeHtml(t.more_info)}"
+          >
+            <ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon>
+          </ha-icon-button>
           <div class="dialog-content"><div class="list">${modalRowsHtml}</div></div>
-        </dialog>
+        </ha-adaptive-dialog>
       `;
+    }
+
+    const existingDialog = this._dialogOpen
+      ? this.shadowRoot?.querySelector?.("ha-adaptive-dialog.schedule-dialog")
+      : null;
+    const existingCard = this.shadowRoot?.querySelector?.("ha-card.interactive");
+
+    if (existingDialog && existingCard) {
+      const cardNameEl = existingCard.querySelector?.(".name");
+      if (cardNameEl) {
+        cardNameEl.setAttribute?.("title", title);
+        cardNameEl.textContent = title;
+      }
+      const cardStatusEl = existingCard.querySelector?.(".status-meta");
+      if (cardStatusEl) {
+        cardStatusEl.innerHTML = statusMetaHtml;
+      }
+      const cardListEl = existingCard.querySelector?.(".card-content .list");
+      if (cardListEl) {
+        cardListEl.innerHTML = rowsHtml;
+      }
+
+      existingDialog.setAttribute?.("header-title", stopTitle);
+      existingDialog.setAttribute?.("aria-label", stopTitle);
+      const closeBtn = existingDialog.querySelector?.(".dialog-close");
+      if (closeBtn) {
+        closeBtn.label = t.close;
+        closeBtn.setAttribute?.("label", t.close);
+        closeBtn.setAttribute?.("title", t.close);
+        closeBtn.setAttribute?.("aria-label", t.close);
+      }
+      const moreInfoBtn = existingDialog.querySelector?.(".dialog-more-info");
+      if (moreInfoBtn) {
+        moreInfoBtn.label = t.more_info;
+        moreInfoBtn.setAttribute?.("label", t.more_info);
+        moreInfoBtn.setAttribute?.("title", t.more_info);
+        moreInfoBtn.setAttribute?.("aria-label", t.more_info);
+      }
+      const subtitleEl = existingDialog.querySelector?.(".dialog-subtitle");
+      if (subtitleEl) {
+        subtitleEl.innerHTML = statusMetaHtml;
+      }
+      const dialogListEl = existingDialog.querySelector?.(".dialog-content .list");
+      if (dialogListEl) {
+        dialogListEl.innerHTML = modalRowsHtml;
+      }
+      return;
     }
 
     this.shadowRoot.innerHTML = `
@@ -1040,8 +1032,7 @@ class VlcTransportHaCard extends HTMLElement {
         <div class="card-header">
           <div class="name" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
           <div class="status-meta">
-            ${errorIconHtml}
-            <span>${escapeHtml(updatedLabel)}</span>
+            ${statusMetaHtml}
           </div>
         </div>
         <div class="card-content"><div class="list">${rowsHtml}</div></div>
@@ -1051,25 +1042,16 @@ class VlcTransportHaCard extends HTMLElement {
 
     if (this._dialogOpen && this.shadowRoot?.querySelector) {
       const dialog = this.shadowRoot.querySelector(".schedule-dialog");
-      if (dialog) {
-        if (typeof dialog.showModal === "function") {
-          try {
-            dialog.removeAttribute("open");
-            dialog.showModal();
-          } catch (_err) {
-            dialog.setAttribute("open", "");
-          }
-        }
-        dialog.addEventListener?.("close", () => {
+      if (dialog && !dialog._hasCloseListener) {
+        dialog._hasCloseListener = true;
+        const onClosed = () => {
           if (this._dialogOpen) {
             this._dialogOpen = false;
             this._renderFromHass();
           }
-        });
-        const contentEl = dialog.querySelector?.(".dialog-content");
-        if (contentEl && prevScrollTop > 0) {
-          contentEl.scrollTop = prevScrollTop;
-        }
+        };
+        dialog.addEventListener?.("closed", onClosed);
+        dialog.addEventListener?.("close", onClosed);
       }
     }
   }

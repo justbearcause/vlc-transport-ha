@@ -460,7 +460,7 @@ test('clicking the card opens a modal with all non-expired departures ignoring f
   });
 
   // Closed by default: only the 1 filtered row is rendered on the card
-  assert.doesNotMatch(card.shadowRoot.innerHTML, /<dialog class="schedule-dialog"/);
+  assert.doesNotMatch(card.shadowRoot.innerHTML, /<ha-adaptive-dialog/);
   assert.match(card.shadowRoot.innerHTML, /<ha-ripple><\/ha-ripple>/);
   assert.match(card.shadowRoot.innerHTML, /--ha-ripple-hover-opacity:\s*0\.04/);
   assert.match(card.shadowRoot.innerHTML, /Only Line 4/);
@@ -479,8 +479,11 @@ test('clicking the card opens a modal with all non-expired departures ignoring f
   assert.equal(card._dialogOpen, true);
   assert.equal(card.getCardSize(), 3); // Card size remains based on the 1 filtered row
   const html = card.shadowRoot.innerHTML;
-  assert.match(html, /<dialog class="schedule-dialog" open/);
-  assert.match(html, /class="dialog-title"[^>]*>FGV 42: Benimaclet<\/div>/);
+  assert.match(html, /<ha-adaptive-dialog[\s\S]*class="schedule-dialog"[\s\S]*open[\s\S]*allow-mode-change[\s\S]*header-title="FGV 42: Benimaclet"/);
+  assert.match(html, /<ha-icon-button[\s\S]*slot="headerNavigationIcon"[\s\S]*data-dialog="close"[\s\S]*class="dialog-close"/);
+  assert.match(html, /slot="headerSubtitle" class="status-meta dialog-subtitle"/);
+  assert.match(html, /<ha-icon-button[\s\S]*slot="headerActionItems"[\s\S]*class="dialog-more-info"/);
+  assert.doesNotMatch(html, /icon-btn/);
   // All 5 non-expired departures appear in the modal, but not the expired one
   assert.match(html, /Empalme/);
   assert.match(html, /Dr\. Lluch/);
@@ -506,12 +509,12 @@ test('modal more-info button closes the modal and dispatches hass-more-info for 
   });
 
   assert.equal(card._dialogOpen, false);
-  assert.doesNotMatch(card.shadowRoot.innerHTML, /<dialog class="schedule-dialog"/);
+  assert.doesNotMatch(card.shadowRoot.innerHTML, /<ha-adaptive-dialog/);
   assert.equal(card._lastEvent.type, 'hass-more-info');
   assert.deepEqual({ ...card._lastEvent.detail }, { entityId: 'sensor.stop' });
 });
 
-test('modal closes on close button, backdrop click, Escape key, entity change, and placeholder state', () => {
+test('modal closes on close button, closed event, backdrop click, Escape key, entity change, and placeholder state', () => {
   const card = setup();
   setState(card, '13:05', { friendly_name: 'EMT 1330: Quartell', departures: [future] });
 
@@ -558,6 +561,66 @@ test('modal closes on close button, backdrop click, Escape key, entity change, a
   card.setConfig({ entity: 'sensor.other' });
   assert.equal(card._dialogOpen, false);
   card._openDialog();
+  assert.equal(card._dialogOpen, false);
+});
+
+test('open ha-adaptive-dialog updates in-place on background hass refreshes and closes on closed event', () => {
+  const card = setup();
+  const listeners = {};
+  const subtitleEl = { innerHTML: '' };
+  const dialogListEl = { innerHTML: '' };
+  const cardNameEl = { textContent: '', setAttribute(k, v) { this[k] = v; } };
+  const cardStatusEl = { innerHTML: '' };
+  const cardListEl = { innerHTML: '' };
+  const mockDialog = {
+    open: true,
+    attrs: {},
+    setAttribute(k, v) { this.attrs[k] = v; },
+    removeAttribute(k) { delete this.attrs[k]; },
+    addEventListener(type, fn) { listeners[type] = fn; },
+    querySelector(sel) {
+      if (sel === '.dialog-subtitle') return subtitleEl;
+      if (sel === '.dialog-content .list') return dialogListEl;
+      return { setAttribute() {} };
+    },
+  };
+  const mockCard = {
+    querySelector(sel) {
+      if (sel === '.name') return cardNameEl;
+      if (sel === '.status-meta') return cardStatusEl;
+      if (sel === '.card-content .list') return cardListEl;
+      return null;
+    },
+  };
+
+  setState(card, '13:05', { friendly_name: 'FGV 42: Benimaclet', departures: [future] });
+
+  // Attach mock querySelector before opening so listener is registered on initial open
+  let mountedDialog = false;
+  card.shadowRoot.querySelector = (sel) => {
+    if (sel === '.schedule-dialog') return mockDialog;
+    if (sel === 'ha-adaptive-dialog.schedule-dialog') return mountedDialog ? mockDialog : null;
+    if (sel === 'ha-card.interactive') return mockCard;
+    return null;
+  };
+
+  card._openDialog();
+  mountedDialog = true;
+  assert.equal(typeof listeners.closed, 'function');
+  const htmlSnapshot = card.shadowRoot.innerHTML;
+
+  // Background hass update modifies existingDialog in-place without replacing shadowRoot.innerHTML
+  setState(card, '13:05', {
+    friendly_name: 'FGV 42: Updated Name',
+    departures: [{ ...future, destination: 'Aeroport' }],
+  });
+  assert.equal(card.shadowRoot.innerHTML, htmlSnapshot);
+  assert.equal(mockDialog.attrs['header-title'], 'FGV 42: Updated Name');
+  assert.match(dialogListEl.innerHTML, /Aeroport/);
+  assert.match(cardListEl.innerHTML, /Aeroport/);
+
+  // Firing 'closed' event from ha-adaptive-dialog (e.g. mobile bottom-sheet swipe) closes dialog
+  listeners.closed();
   assert.equal(card._dialogOpen, false);
 });
 
