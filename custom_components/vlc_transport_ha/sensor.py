@@ -21,11 +21,12 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
+from .const import DOMAIN, FGV_STATION_COORDINATES
+
 VLC_TZ = ZoneInfo("Europe/Madrid")
 
 _LOGGER = logging.getLogger(__name__)
 
-DOMAIN = "vlc_transport_ha"
 EMT_URL = "https://www.emtvalencia.es/EMT/mapfunctions/MapUtilsPetitions.php"
 EMT_NO_ESTIMATIONS = frozenset({"SENSE ESTIMACIONS", "SIN ESTIMACIONES"})
 FGV_PREVISION_URL = (
@@ -42,11 +43,23 @@ async def async_setup_entry(
     provider = entry.data["provider"]
     stop_id = str(entry.data["stop_id"])
     name = entry.data["name"]
+    station_lat = entry.data.get("station_latitude")
+    station_lon = entry.data.get("station_longitude")
 
     coordinator = ValenciaTransitCoordinator(hass, entry, provider, stop_id)
     await coordinator.async_refresh()
     async_add_entities(
-        [ValenciaTransitSensor(coordinator, name, provider, stop_id)], False
+        [
+            ValenciaTransitSensor(
+                coordinator,
+                name,
+                provider,
+                stop_id,
+                station_latitude=station_lat,
+                station_longitude=station_lon,
+            )
+        ],
+        False,
     )
 
 
@@ -387,13 +400,25 @@ class ValenciaTransitSensor(
         name: str,
         provider: str,
         stop_id: str,
+        station_latitude: float | None = None,
+        station_longitude: float | None = None,
     ) -> None:
         super().__init__(coordinator)
+        self.coordinator = coordinator
         self._attr_name = None
         self._attr_unique_id = f"vlc_{provider}_{stop_id}"
         self._attr_icon = (
             "mdi:bus-clock" if provider == "emt" else "mdi:subway-variant"
         )
+        if (
+            provider == "metrovalencia"
+            and (station_latitude is None or station_longitude is None)
+        ):
+            fallback_coords = FGV_STATION_COORDINATES.get(stop_id)
+            if fallback_coords is not None:
+                station_latitude, station_longitude = fallback_coords
+        self._station_latitude = station_latitude
+        self._station_longitude = station_longitude
 
         provider_label = (
             "EMT València" if provider == "emt" else "Metrovalencia (FGV)"
@@ -427,7 +452,7 @@ class ValenciaTransitSensor(
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return upcoming departures, last update timestamp, and error state."""
-        return {
+        attrs: dict[str, Any] = {
             "provider": self.coordinator.provider,
             "stop_id": self.coordinator.stop_id,
             "departures": self.coordinator.data or [],
@@ -439,3 +464,10 @@ class ValenciaTransitSensor(
             "update_failed": not self.coordinator.last_update_success,
             "last_error": self.coordinator.last_error,
         }
+        if (
+            self._station_latitude is not None
+            and self._station_longitude is not None
+        ):
+            attrs["station_latitude"] = self._station_latitude
+            attrs["station_longitude"] = self._station_longitude
+        return attrs

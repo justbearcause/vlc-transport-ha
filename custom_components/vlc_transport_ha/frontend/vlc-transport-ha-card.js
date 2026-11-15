@@ -215,6 +215,19 @@ const METRO_LINE_COLORS = {
   },
 };
 
+const METRO_MAP_LINE_COLORS = {
+  1: "#FEC601",
+  2: "#E60096",
+  3: "#DD052C",
+  4: "#014A99",
+  5: "#008F71",
+  6: "#8884BF",
+  7: "#F28D01",
+  8: "#82CEE6",
+  9: "#B8804F",
+  10: "#B7DD79",
+};
+
 const CARD_STYLES = `
   :host {
     display: block;
@@ -255,12 +268,6 @@ const CARD_STYLES = `
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .dest-wrap {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
   .dest-meta {
     font-size: var(--ha-tile-info-secondary-font-size, var(--ha-font-size-s, 12px));
     line-height: var(--ha-tile-info-secondary-line-height, var(--ha-line-height-condensed, 16px));
@@ -295,13 +302,35 @@ const CARD_STYLES = `
     display: flex;
     flex-direction: column;
     gap: var(--entities-card-row-gap, var(--card-row-gap, 8px));
+    --ha-list-padding: 0;
+    --ha-list-gap: var(--entities-card-row-gap, var(--card-row-gap, 8px));
   }
   .row {
+    min-height: 40px;
+    --ha-row-item-min-height: 40px;
+    --ha-row-item-padding-inline: 0;
+    --ha-row-item-padding-block: 0;
+    --ha-row-item-gap: var(--ha-space-4, 16px);
+  }
+  .row:not(:defined) {
     display: grid;
     grid-template-columns: 40px minmax(0, 1fr) max-content;
+    column-gap: var(--ha-space-4, 16px);
+    row-gap: 2px;
     align-items: center;
-    gap: var(--ha-space-4, 16px);
-    min-height: 40px;
+  }
+  .row:not(:defined) > [slot="start"] {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  .row:not(:defined) > [slot="headline"],
+  .row:not(:defined) > [slot="supporting-text"] {
+    grid-column: 2;
+  }
+  .row:not(:defined) > [slot="end"] {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    justify-self: end;
   }
   .line-badge {
     display: flex;
@@ -332,31 +361,31 @@ const CARD_STYLES = `
   }
   .placeholder { padding: var(--ha-space-4, 16px); }
   .warning { border-width: 0; }
-  .warning::after {
-    position: absolute;
-    inset: 0;
-    content: "";
-    background-color: var(--warning-color, #FF9800);
-    opacity: 0.12;
-    pointer-events: none;
-    border-radius: inherit;
+  .warning ha-alert {
+    display: block;
+    --ha-alert-border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg, 12px));
   }
-  .warning-content {
-    display: flex;
-    align-items: center;
-    gap: var(--ha-space-2, 8px);
-    padding: var(--ha-space-4, 16px);
-  }
-  .warning-content ha-icon {
-    flex: 0 0 24px;
-    color: var(--warning-color, #FF9800);
-  }
-  .warning-message { min-width: 0; overflow-wrap: anywhere; }
   .schedule-dialog {
     --dialog-content-padding: var(--ha-space-3, 12px) var(--ha-space-6, 24px) calc(var(--ha-space-6, 24px) + env(safe-area-inset-bottom, 0px));
   }
   .dialog-content {
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-4, 16px);
+  }
+  .dialog-map-container {
+    width: 100%;
+    height: 260px;
+    border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg, 12px));
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--divider-color, rgba(127, 127, 127, 0.2));
+  }
+  .schedule-map {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
 `;
 
@@ -640,16 +669,176 @@ class VlcTransportHaCard extends HTMLElement {
     return getTranslations(this._hass?.language);
   }
 
+  _isDarkMode() {
+    const darkMode = this._hass?.themes?.darkMode;
+    return typeof darkMode === "boolean" ? darkMode : Boolean(this._systemTheme?.matches);
+  }
+
   _getBadgeColors(provider, line) {
     if (provider === "emt") return ["#E30613", "#FFFFFF"];
-    const darkMode = this._hass?.themes?.darkMode;
-    const isDark = typeof darkMode === "boolean" ? darkMode : Boolean(this._systemTheme?.matches);
+    const isDark = this._isDarkMode();
     const normalizedLine = String(line ?? "").trim().replace(/^L\s*/i, "");
     const colors = METRO_LINE_COLORS[isDark ? "dark" : "light"];
     if (Object.prototype.hasOwnProperty.call(colors, normalizedLine)) {
       return colors[normalizedLine];
     }
     return ["var(--secondary-background-color, var(--primary-background-color))", "var(--primary-text-color)"];
+  }
+
+  _isValidCoordinate(lat, lon) {
+    return (
+      typeof lat === "number" &&
+      typeof lon === "number" &&
+      !isNaN(lat) &&
+      !isNaN(lon) &&
+      (lat !== 0 || lon !== 0)
+    );
+  }
+
+  _ensureHaMapLoaded() {
+    if (this._mapLoadRequested) return;
+    if (typeof customElements !== "undefined" && customElements.get?.("ha-map")) {
+      return;
+    }
+    if (typeof window !== "undefined" && typeof window.loadCardHelpers === "function") {
+      this._mapLoadRequested = true;
+      Promise.resolve(window.loadCardHelpers())
+        .then((helpers) => helpers?.createCardElement?.({ type: "map", entities: [] }))
+        .then(() => customElements?.whenDefined?.("ha-map"))
+        .then(() => {
+          if (this._dialogOpen) {
+            this._renderFromHass();
+          }
+        })
+        .catch(() => {
+          this._mapLoadRequested = false;
+        });
+    }
+  }
+
+  _buildMapData(data, allDepartures) {
+    if (data?.provider !== "metrovalencia") return null;
+
+    const { stopTitle, stationLatitude, stationLongitude } = data;
+    const hasStationCoords = this._isValidCoordinate(stationLatitude, stationLongitude);
+
+    const seenKeys = new Set();
+    const trainItems = [];
+    for (const d of allDepartures) {
+      if (!this._isValidCoordinate(d?.latitude, d?.longitude)) continue;
+      const key =
+        d.vehicle !== undefined && d.vehicle !== null && String(d.vehicle).trim() !== ""
+          ? `v_${String(d.vehicle).trim()}`
+          : `${d.line ?? ""}_${d.destination ?? ""}_${d.latitude}_${d.longitude}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      trainItems.push(d);
+    }
+
+    if (!hasStationCoords && trainItems.length === 0) {
+      return null;
+    }
+
+    const syntheticStates = {};
+    const entities = [];
+
+    if (hasStationCoords) {
+      const stationEntityId = "sensor.vlc_metro_station";
+      syntheticStates[stationEntityId] = {
+        entity_id: stationEntityId,
+        state: stopTitle,
+        attributes: {
+          friendly_name: stopTitle,
+          latitude: stationLatitude,
+          longitude: stationLongitude,
+          icon: "mdi:subway-variant",
+        },
+      };
+      entities.push({
+        entity_id: stationEntityId,
+        name: stopTitle,
+        label_mode: "icon",
+        color: "var(--primary-color, #03a9f4)",
+        focus: true,
+      });
+    }
+
+    trainItems.forEach((d, idx) => {
+      const rawLine = String(d.line ?? "").trim();
+      const normalizedLine = rawLine.replace(/^L\s*/i, "");
+      const lineLabel = /^\d+$/.test(normalizedLine)
+        ? `L${normalizedLine}`
+        : rawLine || "—";
+      const lineColor = Object.prototype.hasOwnProperty.call(
+        METRO_MAP_LINE_COLORS,
+        normalizedLine
+      )
+        ? METRO_MAP_LINE_COLORS[normalizedLine]
+        : "var(--primary-color, #03a9f4)";
+      const trainSuffix =
+        d.vehicle !== undefined && d.vehicle !== null && String(d.vehicle).trim() !== ""
+          ? String(d.vehicle).trim().replace(/[^a-zA-Z0-9_]/g, "_")
+          : String(idx);
+      const trainEntityId = `sensor.vlc_metro_train_${trainSuffix}`;
+      const friendlyName = d.destination
+        ? `${lineLabel} → ${d.destination}`
+        : lineLabel;
+
+      syntheticStates[trainEntityId] = {
+        entity_id: trainEntityId,
+        state: lineLabel,
+        attributes: {
+          friendly_name: friendlyName,
+          latitude: d.latitude,
+          longitude: d.longitude,
+          icon: "mdi:train",
+        },
+      };
+      entities.push({
+        entity_id: trainEntityId,
+        name: lineLabel,
+        label_mode: "state",
+        color: lineColor,
+        focus: true,
+      });
+    });
+
+    const mapHass = {
+      ...this._hass,
+      states: {
+        ...(this._hass?.states || {}),
+        ...syntheticStates,
+      },
+    };
+
+    return {
+      hass: mapHass,
+      entities,
+      themeMode: this._isDarkMode() ? "dark" : "light",
+    };
+  }
+
+  _syncDialogMap(rootEl, mapData) {
+    if (!rootEl || !mapData) return;
+    const mapEl = rootEl.querySelector?.(".schedule-map");
+    if (!mapEl) return;
+
+    this._ensureHaMapLoaded();
+    mapEl.hass = mapData.hass;
+    mapEl.entities = mapData.entities;
+    mapEl.autoFit = true;
+    mapEl.fitZones = false;
+    mapEl.interactiveZones = false;
+    mapEl.clusterMarkers = false;
+    mapEl.zoom = 14;
+    mapEl.themeMode = mapData.themeMode;
+
+    if (!mapEl._hasMoreInfoBlocker) {
+      mapEl._hasMoreInfoBlocker = true;
+      mapEl.addEventListener?.("hass-more-info", (ev) => {
+        ev?.stopPropagation?.();
+      });
+    }
   }
 
   _matchesFilter(departure) {
@@ -835,6 +1024,9 @@ class VlcTransportHaCard extends HTMLElement {
     const errorMessage = attrs.last_error || t.update_error;
     const lastUpdated = Object.prototype.hasOwnProperty.call(attrs, "last_updated")
       ? attrs.last_updated : stateObj?.last_updated;
+    const rawStationLat = attrs.station_latitude ?? attrs.latitude;
+    const rawStationLon = attrs.station_longitude ?? attrs.longitude;
+    const hasAttrStationCoords = this._isValidCoordinate(rawStationLat, rawStationLon);
 
     // Update local cache whenever valid attributes are present
     if (hasValidData) {
@@ -846,6 +1038,8 @@ class VlcTransportHaCard extends HTMLElement {
         provider: attrs.provider || "emt",
         departures: attrs.departures,
         lastUpdated,
+        stationLatitude: hasAttrStationCoords ? rawStationLat : null,
+        stationLongitude: hasAttrStationCoords ? rawStationLon : null,
       };
     } else if (!this._cache && stateObj) {
       this._cache = {
@@ -856,6 +1050,8 @@ class VlcTransportHaCard extends HTMLElement {
         provider: attrs.provider || "emt",
         departures: Array.isArray(attrs.departures) ? attrs.departures : [],
         lastUpdated,
+        stationLatitude: hasAttrStationCoords ? rawStationLat : null,
+        stationLongitude: hasAttrStationCoords ? rawStationLon : null,
       };
     }
 
@@ -869,6 +1065,12 @@ class VlcTransportHaCard extends HTMLElement {
       provider: this._cache.provider,
       departures: this._cache.departures,
       lastUpdated: attrs.last_updated || this._cache.lastUpdated,
+      stationLatitude: hasAttrStationCoords
+        ? rawStationLat
+        : this._cache.stationLatitude,
+      stationLongitude: hasAttrStationCoords
+        ? rawStationLon
+        : this._cache.stationLongitude,
       hasError,
       errorMessage,
     };
@@ -879,15 +1081,14 @@ class VlcTransportHaCard extends HTMLElement {
   renderPlaceholder(message, warning = false) {
     this._isPlaceholder = true;
     this._dialogOpen = false;
+    this._dialogHasMap = false;
     this._renderedRows = 0;
     this.shadowRoot.innerHTML = `
       <style>${CARD_STYLES}</style>
       <ha-card class="${warning ? "warning" : ""}">
-        ${warning ? `
-          <div class="warning-content" role="alert">
-            <ha-icon icon="mdi:alert-outline" aria-hidden="true"></ha-icon>
-            <span class="warning-message">${escapeHtml(message)}</span>
-          </div>` : `<div class="placeholder">${escapeHtml(message)}</div>`}
+        ${warning
+          ? `<ha-alert alert-type="warning">${escapeHtml(message)}</ha-alert>`
+          : `<div class="placeholder">${escapeHtml(message)}</div>`}
       </ha-card>
     `;
   }
@@ -903,15 +1104,16 @@ class VlcTransportHaCard extends HTMLElement {
         const timeClass = diffMin !== null && diffMin < 5 ? "time soon" : "time";
         const [background, color] = this._getBadgeColors(provider, d.line);
         const metaText = detailed ? this._formatDepartureMeta(d, t) : "";
-        const destHtml = metaText
-          ? `<div class="dest-wrap"><span class="dest" title="${escapeHtml(d.destination || "")}">${escapeHtml(d.destination || "")}</span><span class="dest-meta" title="${escapeHtml(metaText)}">${escapeHtml(metaText)}</span></div>`
-          : `<span class="dest" title="${escapeHtml(d.destination || "")}">${escapeHtml(d.destination || "")}</span>`;
+        const metaHtml = metaText
+          ? `<span slot="supporting-text" class="dest-meta" title="${escapeHtml(metaText)}">${escapeHtml(metaText)}</span>`
+          : "";
         return `
-          <div class="row">
-            <span class="line-badge" style="background:${background};color:${color}">${escapeHtml(d.line || "—")}</span>
-            ${destHtml}
-            <span class="${timeClass}">${escapeHtml(timeLabel)}</span>
-          </div>
+          <ha-list-item-base class="row">
+            <span slot="start" class="line-badge" style="background:${background};color:${color}">${escapeHtml(d.line || "—")}</span>
+            <span slot="headline" class="dest" title="${escapeHtml(d.destination || "")}">${escapeHtml(d.destination || "")}</span>
+            ${metaHtml}
+            <span slot="end" class="${timeClass}">${escapeHtml(timeLabel)}</span>
+          </ha-list-item-base>
         `;
       })
       .join("");
@@ -935,6 +1137,7 @@ class VlcTransportHaCard extends HTMLElement {
 
     let modalRowsHtml = "";
     let dialogHtml = "";
+    let mapData = null;
     if (this._dialogOpen) {
       const allDepartures = this._getCurrentDepartures(departures, {
         applyFilters: false,
@@ -943,6 +1146,10 @@ class VlcTransportHaCard extends HTMLElement {
       modalRowsHtml = this._renderRows(allDepartures, provider, t, {
         detailed: true,
       });
+      mapData = this._buildMapData(data, allDepartures);
+      const mapContainerHtml = mapData
+        ? `<div class="dialog-map-container"><ha-map class="schedule-map"></ha-map></div>`
+        : "";
       dialogHtml = `
         <ha-adaptive-dialog
           class="schedule-dialog"
@@ -973,9 +1180,11 @@ class VlcTransportHaCard extends HTMLElement {
           >
             <ha-icon icon="mdi:information-outline" aria-hidden="true"></ha-icon>
           </ha-icon-button>
-          <div class="dialog-content"><div class="list">${modalRowsHtml}</div></div>
+          <div class="dialog-content"><ha-list-base class="list">${modalRowsHtml}</ha-list-base>${mapContainerHtml}</div>
         </ha-adaptive-dialog>
       `;
+    } else {
+      this._dialogHasMap = false;
     }
 
     const existingDialog = this._dialogOpen
@@ -983,7 +1192,7 @@ class VlcTransportHaCard extends HTMLElement {
       : null;
     const existingCard = this.shadowRoot?.querySelector?.("ha-card.interactive");
 
-    if (existingDialog && existingCard) {
+    if (existingDialog && existingCard && Boolean(this._dialogHasMap) === Boolean(mapData)) {
       const cardNameEl = existingCard.querySelector?.(".name");
       if (cardNameEl) {
         cardNameEl.setAttribute?.("title", title);
@@ -1022,8 +1231,13 @@ class VlcTransportHaCard extends HTMLElement {
       if (dialogListEl) {
         dialogListEl.innerHTML = modalRowsHtml;
       }
+      if (mapData) {
+        this._syncDialogMap(existingDialog, mapData);
+      }
       return;
     }
+
+    this._dialogHasMap = Boolean(mapData);
 
     this.shadowRoot.innerHTML = `
       <style>${CARD_STYLES}</style>
@@ -1035,7 +1249,7 @@ class VlcTransportHaCard extends HTMLElement {
             ${statusMetaHtml}
           </div>
         </div>
-        <div class="card-content"><div class="list">${rowsHtml}</div></div>
+        <div class="card-content"><ha-list-base class="list">${rowsHtml}</ha-list-base></div>
       </ha-card>
       ${dialogHtml}
     `;
@@ -1047,11 +1261,15 @@ class VlcTransportHaCard extends HTMLElement {
         const onClosed = () => {
           if (this._dialogOpen) {
             this._dialogOpen = false;
+            this._dialogHasMap = false;
             this._renderFromHass();
           }
         };
         dialog.addEventListener?.("closed", onClosed);
         dialog.addEventListener?.("close", onClosed);
+      }
+      if (mapData) {
+        this._syncDialogMap(dialog || this.shadowRoot, mapData);
       }
     }
   }

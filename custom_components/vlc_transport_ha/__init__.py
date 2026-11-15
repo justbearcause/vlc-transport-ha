@@ -7,7 +7,8 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.frontend import add_extra_js_url
 import homeassistant.helpers.config_validation as cv
 
-DOMAIN = "vlc_transport_ha"
+from .const import DOMAIN
+
 CARD_URL = "/vlc_transport_ha/vlc-transport-ha-card.js"
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 VERSION: str = json.loads(

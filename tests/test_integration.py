@@ -49,7 +49,8 @@ class Coordinator(Generic):
 
 
 class CoordinatorEntity(Generic):
-    pass
+    def __init__(self, coordinator):
+        self.coordinator = coordinator
 
 
 class ConfigFlow:
@@ -101,7 +102,7 @@ test_modules["homeassistant.config_entries"].ConfigFlowResult = dict
 test_modules["homeassistant.core"].HomeAssistant = object
 test_modules["homeassistant.helpers"].config_validation = test_modules["homeassistant.helpers.config_validation"]
 test_modules["homeassistant.helpers.aiohttp_client"].async_get_clientsession = lambda hass: hass.session
-test_modules["homeassistant.helpers.device_registry"].DeviceEntryType = type("DeviceEntryType", (), {})
+test_modules["homeassistant.helpers.device_registry"].DeviceEntryType = types.SimpleNamespace(SERVICE="service")
 test_modules["homeassistant.helpers.device_registry"].DeviceInfo = dict
 test_modules["homeassistant.helpers.entity_platform"].AddEntitiesCallback = object
 coordinator_module = test_modules["homeassistant.helpers.update_coordinator"]
@@ -124,13 +125,21 @@ test_modules["aiohttp"].ClientTimeout = lambda total: types.SimpleNamespace(tota
 
 
 def load(name, filename):
-    spec = importlib.util.spec_from_file_location(name, ROOT / filename)
+    pkg = "custom_components.vlc_transport_ha"
+    full_name = pkg if filename == "__init__.py" else f"{pkg}.{Path(filename).stem}"
+    spec = importlib.util.spec_from_file_location(
+        full_name,
+        ROOT / filename,
+        submodule_search_locations=[str(ROOT)] if filename == "__init__.py" else None,
+    )
     loaded = importlib.util.module_from_spec(spec)
+    sys.modules[full_name] = loaded
     spec.loader.exec_module(loaded)
     return loaded
 
 
 with patch.dict(sys.modules, test_modules):
+    const = load("vlc_const_test", "const.py")
     init = load("vlc_init_test", "__init__.py")
     sensor = load("vlc_sensor_test", "sensor.py")
     config_flow = load("vlc_config_flow_test", "config_flow.py")
@@ -285,7 +294,12 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
                 "data": {
                     "estaciones": [
                         {"estacion_id_FGV": 16, "nombre": "Xàtiva"},
-                        {"estacion_id_FGV": 999, "nombre": "Nueva Estación"},
+                        {
+                            "estacion_id_FGV": 999,
+                            "nombre": "Nueva Estación",
+                            "latitud": 39.501234,
+                            "longitud": -0.401234,
+                        },
                     ]
                 },
             }
@@ -293,6 +307,38 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         stations_live = await flow._async_fetch_fgv_stations()
         self.assertEqual(stations_live["16"], "Xàtiva")
         self.assertEqual(stations_live["999"], "Nueva Estación")
+
+        # Creating entry for known station uses built-in FGV_STATION_COORDINATES
+        entry_16 = await flow.async_step_metrovalencia({"stop_id": "16"})
+        self.assertEqual(entry_16["data"]["station_latitude"], 39.467186)
+        self.assertEqual(entry_16["data"]["station_longitude"], -0.377375)
+
+        # Creating entry for newly synced station uses coordinates from API
+        entry_999 = await flow.async_step_metrovalencia({"stop_id": "999"})
+        self.assertEqual(entry_999["data"]["station_latitude"], 39.501234)
+        self.assertEqual(entry_999["data"]["station_longitude"], -0.401234)
+
+        # ValenciaTransitSensor exposes station_latitude/station_longitude for Metrovalencia (including legacy entries without coords in entry.data)
+        self.coordinator.data = []
+        self.coordinator.last_update_success = True
+        self.coordinator.last_success_time = None
+        self.coordinator.last_error = None
+        metro_sensor = sensor.ValenciaTransitSensor(
+            self.coordinator, "Metrovalencia Xàtiva", "metrovalencia", "16"
+        )
+        metro_attrs = metro_sensor.extra_state_attributes
+        self.assertEqual(metro_attrs["station_latitude"], 39.467186)
+        self.assertEqual(metro_attrs["station_longitude"], -0.377375)
+
+        # EMT sensor does not expose station_latitude/station_longitude
+        emt_coordinator = sensor.ValenciaTransitCoordinator(self.hass, None, "emt", "16")
+        emt_coordinator.data = []
+        emt_coordinator.last_update_success = True
+        emt_sensor = sensor.ValenciaTransitSensor(
+            emt_coordinator, "EMT 16", "emt", "16"
+        )
+        self.assertNotIn("station_latitude", emt_sensor.extra_state_attributes)
+        self.assertNotIn("station_longitude", emt_sensor.extra_state_attributes)
 
     async def test_metro_realtime_fgv_api_parsing_sorting_and_errors(self):
         self.coordinator.provider = "metrovalencia"

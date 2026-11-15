@@ -31,7 +31,7 @@ It includes an **automatically registered Lovelace departure board card** (`cust
   - **Visual Editor**: Configure the sensor, custom title, maximum rows (`1`–`15`), and filters straight from the Home Assistant UI.
   - **Official Line Badges**: Displays EMT red badges (`#E30613`) and official Metrovalencia line `1`–`10` color palettes tailored for both **Light** and **Dark** themes.
   - **Smart Filtering**: Whitelist (`include`) or Blacklist (`exclude`) departures by line number (`filter_lines`) and/or destination name (`filter_destinations`, case- and accent-insensitive).
-  - **Full-Schedule Popup Modal**: Clicking the card opens a modal dialog displaying **all** upcoming departures at the stop (bypassing card filters and `max_items` limit), with second-level countdown precision (`2 min 52 s`) and live train telemetry (distance in meters, train unit `#`, capacity) for Metrovalencia, plus a quick-action button to open Home Assistant's native entity *More Info* dialog.
+  - **Full-Schedule Popup Modal**: Clicking the card opens a modal dialog displaying **all** upcoming departures at the stop (bypassing card filters and `max_items` limit), with second-level countdown precision (`2 min 52 s`), live train telemetry (distance in meters, train unit `#`, capacity), and an interactive **live map (`<ha-map>`)** below the list for Metrovalencia showing the station and approaching trains (`L1`–`L10`) in official line colors, plus a quick-action button to open Home Assistant's native entity *More Info* dialog.
   - **Live Countdown & Resilient Caching**: Uses integer minute rounding on the compact card (`< 60 s` shown as `Now`), updates relative countdowns every 10 seconds in the browser, highlights imminent arrivals (`< 5 min`), automatically hides expired departures, and preserves the last known board with a subtle warning icon if a poll temporarily fails.
 - **Multi-Language Support**:
   - Config Flow and Lovelace Card are localized in **English (`en`)**, **Spanish / Castellano (`es`)**, **Valencian / Catalan (`ca` / `va`)**, and **Russian (`ru`)**.
@@ -64,6 +64,7 @@ It includes an **automatically registered Lovelace departure board card** (`cust
        └── vlc_transport_ha/
            ├── __init__.py
            ├── config_flow.py
+           ├── const.py
            ├── manifest.json
            ├── sensor.py
            ├── strings.json
@@ -128,7 +129,7 @@ The integration automatically registers the custom card `custom:vlc-transport-ha
 - **Blacklist (`filter_mode: exclude`)**:
   - Any departure matching **either** `filter_lines` **or** `filter_destinations` is hidden (`OR` logic).
 - **Interactive Full Schedule**:
-  - Clicking anywhere on the card opens a popup modal with the complete unfiltered list of upcoming departures for that stop/station (including exact seconds and live train distance, unit number, and capacity for Metrovalencia) and an info (`i`) button to open the underlying sensor's Home Assistant *More Info* dialog.
+  - Clicking anywhere on the card opens a popup modal with the complete unfiltered list of upcoming departures for that stop/station (including exact seconds, live train distance, unit number, capacity, and a live `<ha-map>` map of the station and approaching trains for Metrovalencia) and an info (`i`) button to open the underlying sensor's Home Assistant *More Info* dialog.
 
 ### YAML Examples
 
@@ -188,6 +189,8 @@ Each configured stop or station creates a `sensor` entity polled every **30 seco
 | `last_updated` | `string \| null` | ISO-8601 timestamp (`Europe/Madrid`) of the last successful API update. |
 | `update_failed` | `boolean` | `true` if the most recent poll failed, otherwise `false`. |
 | `last_error` | `string \| null` | Error message from the last failed poll, or `null` when healthy. |
+| `station_latitude` | `float \| null` | Metrovalencia station latitude (included for `"metrovalencia"` sensors when known). |
+| `station_longitude` | `float \| null` | Metrovalencia station longitude (included for `"metrovalencia"` sensors when known). |
 
 #### Example Attribute Payload
 
@@ -195,6 +198,8 @@ Each configured stop or station creates a `sensor` entity polled every **30 seco
 {
   "provider": "metrovalencia",
   "stop_id": "16",
+  "station_latitude": 39.467186,
+  "station_longitude": -0.377375,
   "departures": [
     {
       "line": "3",
@@ -291,8 +296,8 @@ This integration communicates directly with public Valencia transit endpoints wi
 
 1. **EMT València Stop Directory (Config Flow)**:
    - Valencia Open Data ArcGIS REST Service (`OPENDATA/Trafico/MapServer/226`) with automatic pagination.
-2. **Metrovalencia Station Directory (Config Flow)**:
-   - Official FGV REST API (`https://www.fgv.es/fgv/app/es/api/v1/V/sincronizacion?fecha_desde=...`), backed by an embedded fallback dictionary of all 144 official FGV stations (`assets/fgvv.db`) in case the endpoint is temporarily unreachable.
+2. **Metrovalencia Station Directory (Config Flow & Station Coordinates)**:
+   - Official FGV REST API (`https://www.fgv.es/fgv/app/es/api/v1/V/sincronizacion?fecha_desde=...`), backed by an embedded fallback directory (`const.py`) of all 144 official FGV stations and their GPS coordinates (`assets/fgvv.db`) in case the endpoint is temporarily unreachable.
 3. **EMT Real-Time Arrivals (`ValenciaTransitCoordinator`)**:
    - Queries `https://www.emtvalencia.es/EMT/mapfunctions/MapUtilsPetitions.php?sec=getSAE&parada=<stop_id>&adaptados=false`, parses the XML `<estimacion>` payload, fixes Latin-1/UTF-8 encoding quirks, and resolves relative minutes/`Próximo` or `HH:MM` strings into exact timezone-aware timestamps.
 4. **Metrovalencia Real-Time Departures (`ValenciaTransitCoordinator`)**:
@@ -312,6 +317,7 @@ This integration communicates directly with public Valencia transit endpoints wi
 │   └── vlc_transport_ha/
 │       ├── __init__.py             # Component setup & static frontend registration
 │       ├── config_flow.py          # UI setup flow for EMT & Metrovalencia
+│       ├── const.py                # Shared constants & FGV station names/coordinates
 │       ├── manifest.json           # Integration manifest
 │       ├── sensor.py               # DataUpdateCoordinator & SensorEntity
 │       ├── strings.json            # Base UI strings

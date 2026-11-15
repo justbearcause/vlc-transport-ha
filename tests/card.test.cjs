@@ -193,7 +193,7 @@ test('startup uses the native localized warning and renders data as soon as the 
   };
   assert.deepEqual(calls, ['ui.panel.lovelace.warning.starting']);
   assert.match(card.shadowRoot.innerHTML, /class="warning"/);
-  assert.match(card.shadowRoot.innerHTML, /Custom localized starting warning/);
+  assert.match(card.shadowRoot.innerHTML, /<ha-alert alert-type="warning">Custom localized starting warning<\/ha-alert>/);
   assert.equal(card.getCardSize(), 1);
   setState(card, '13:05', { departures: [future] }, 'sensor.stop', { config: { state: 'NOT_RUNNING' } });
   assert.match(card.shadowRoot.innerHTML, /Centre/);
@@ -210,7 +210,7 @@ test('startup fallback supersedes cached rows and ends when HA finishes starting
   emptyCard.hass = { states: {}, config: { state: 'NOT_RUNNING' } };
   emptyCard.hass = { states: {}, config: { state: 'RUNNING' } };
   assert.doesNotMatch(emptyCard.shadowRoot.innerHTML, /Home Assistant is starting/);
-  assert.match(emptyCard.shadowRoot.innerHTML, /sensor.stop not found/);
+  assert.match(emptyCard.shadowRoot.innerHTML, /<ha-alert alert-type="warning">Sensor sensor\.stop not found<\/ha-alert>/);
   assert.match(emptyCard.shadowRoot.innerHTML, /class="warning"/);
 });
 
@@ -372,10 +372,10 @@ test('departures under 5 minutes use the Home Assistant success color', () => {
   });
   const html = card.shadowRoot.innerHTML;
   assert.match(html, /\.time\.soon\s*\{\s*color:\s*var\(--success-color,\s*#43A047\);/);
-  assert.match(html, /<span class="time soon">Now<\/span>/);
-  assert.equal((html.match(/<span class="time soon">4 min<\/span>/g) || []).length, 2);
-  assert.match(html, /<span class="time">5 min<\/span>/);
-  assert.match(html, /<span class="time">14:30<\/span>/);
+  assert.match(html, /<span slot="end" class="time soon">Now<\/span>/);
+  assert.equal((html.match(/<span slot="end" class="time soon">4 min<\/span>/g) || []).length, 2);
+  assert.match(html, /<span slot="end" class="time">5 min<\/span>/);
+  assert.match(html, /<span slot="end" class="time">14:30<\/span>/);
 });
 
 test('localizes card and editor in Russian, Spanish, and Valencian with regional and prototype-safe fallbacks', () => {
@@ -657,17 +657,19 @@ test('card uses integer minute rounding while modal shows seconds and live train
     departures: metroDeps,
   });
   const cardHtml = card.shadowRoot.innerHTML;
-  assert.match(cardHtml, /<span class="time soon">Now<\/span>/);
-  assert.match(cardHtml, /<span class="time soon">2 min<\/span>/);
+  assert.match(cardHtml, /<ha-list-base class="list">/);
+  assert.match(cardHtml, /<ha-list-item-base class="row">/);
+  assert.match(cardHtml, /<span slot="end" class="time soon">Now<\/span>/);
+  assert.match(cardHtml, /<span slot="end" class="time soon">2 min<\/span>/);
   assert.doesNotMatch(cardHtml, /2 min 52 s|450 m|Train #1166/);
 
-  // Open modal: shows seconds (45 s, 2 min 52 s) and telemetry subtitle
+  // Open modal: shows seconds (45 s, 2 min 52 s) and telemetry subtitle in supporting-text slot
   card._openDialog();
   const modalHtml = card.shadowRoot.innerHTML;
-  assert.match(modalHtml, /<span class="time soon">45 s<\/span>/);
-  assert.match(modalHtml, /<span class="time soon">2 min 52 s<\/span>/);
-  assert.match(modalHtml, /120 m · Train #4302/);
-  assert.match(modalHtml, /450 m · Train #1166 · cap\. 397/);
+  assert.match(modalHtml, /<span slot="end" class="time soon">45 s<\/span>/);
+  assert.match(modalHtml, /<span slot="end" class="time soon">2 min 52 s<\/span>/);
+  assert.match(modalHtml, /<span slot="supporting-text" class="dest-meta"[^>]*>120 m · Train #4302<\/span>/);
+  assert.match(modalHtml, /<span slot="supporting-text" class="dest-meta"[^>]*>450 m · Train #1166 · cap\. 397<\/span>/);
 
   // Russian localization in modal
   setState(card, '12:00', {
@@ -676,7 +678,196 @@ test('card uses integer minute rounding while modal shows seconds and live train
     departures: metroDeps,
   }, 'sensor.stop', { language: 'ru' });
   const ruModalHtml = card.shadowRoot.innerHTML;
-  assert.match(ruModalHtml, /<span class="time soon">45 с<\/span>/);
-  assert.match(ruModalHtml, /<span class="time soon">2 мин 52 с<\/span>/);
+  assert.match(ruModalHtml, /<span slot="end" class="time soon">45 с<\/span>/);
+  assert.match(ruModalHtml, /<span slot="end" class="time soon">2 мин 52 с<\/span>/);
   assert.match(ruModalHtml, /450 м · Состав #1166 · вмест\. 397/);
+});
+
+test('Metrovalencia modal renders ha-map below the list with station and live train markers and updates in-place', () => {
+  const card = setup();
+  let blockedEvent = false;
+  let moreInfoListener = null;
+  const mockMap = {
+    addEventListener(type, fn) {
+      if (type === 'hass-more-info') moreInfoListener = fn;
+    },
+  };
+  const subtitleEl = { innerHTML: '' };
+  const dialogListEl = { innerHTML: '' };
+  const mockDialog = {
+    open: true,
+    setAttribute() {},
+    addEventListener() {},
+    querySelector(sel) {
+      if (sel === '.schedule-map') return mockMap;
+      if (sel === '.dialog-subtitle') return subtitleEl;
+      if (sel === '.dialog-content .list') return dialogListEl;
+      return { setAttribute() {} };
+    },
+  };
+  const mockCard = {
+    querySelector() { return { setAttribute() {}, innerHTML: '', textContent: '' }; },
+  };
+  let dialogMounted = false;
+  card.shadowRoot.querySelector = (sel) => {
+    if (sel === '.schedule-dialog') return mockDialog;
+    if (sel === 'ha-adaptive-dialog.schedule-dialog') return dialogMounted ? mockDialog : null;
+    if (sel === 'ha-card.interactive') return mockCard;
+    return null;
+  };
+
+  setState(card, '12:00', {
+    friendly_name: 'Metrovalencia Xàtiva',
+    provider: 'metrovalencia',
+    station_latitude: 39.467186,
+    station_longitude: -0.377375,
+    departures: [
+      {
+        line: '3',
+        destination: 'Aeroport',
+        time: '12:00',
+        timestamp: '2026-11-13T12:00:45Z',
+        seconds: 45,
+        vehicle: '4302',
+        latitude: 39.470146,
+        longitude: -0.370928,
+      },
+      {
+        line: '5',
+        destination: 'Marítim',
+        time: '12:02',
+        timestamp: '2026-11-13T12:02:52Z',
+        seconds: 172,
+        vehicle: '1166',
+        latitude: 39.4699,
+        longitude: -0.3763,
+      },
+    ],
+  }, 'sensor.stop', { themes: { darkMode: true } });
+
+  card._openDialog();
+  dialogMounted = true;
+
+  // Map container is rendered right below <ha-list-base class="list">
+  assert.match(
+    card.shadowRoot.innerHTML,
+    /<div class="dialog-content"><ha-list-base class="list">[\s\S]*<\/ha-list-base><div class="dialog-map-container"><ha-map class="schedule-map"><\/ha-map><\/div><\/div>/
+  );
+
+  // Verify ha-map properties (2026.10+ MapLibre API)
+  assert.equal(mockMap.autoFit, true);
+  assert.equal(mockMap.fitZones, false);
+  assert.equal(mockMap.interactiveZones, false);
+  assert.equal(mockMap.clusterMarkers, false);
+  assert.equal(mockMap.zoom, 14);
+  assert.equal(mockMap.themeMode, 'dark');
+  assert.equal(mockMap.entities.length, 3);
+
+  // Station marker + 2 train markers with line labels and official line colors
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(
+        mockMap.entities.map((e) => ({
+          entity_id: e.entity_id,
+          name: e.name,
+          label_mode: e.label_mode,
+          color: e.color,
+        }))
+      )
+    ),
+    [
+      {
+        entity_id: 'sensor.vlc_metro_station',
+        name: 'Metrovalencia Xàtiva',
+        label_mode: 'icon',
+        color: 'var(--primary-color, #03a9f4)',
+      },
+      {
+        entity_id: 'sensor.vlc_metro_train_4302',
+        name: 'L3',
+        label_mode: 'state',
+        color: '#DD052C',
+      },
+      {
+        entity_id: 'sensor.vlc_metro_train_1166',
+        name: 'L5',
+        label_mode: 'state',
+        color: '#008F71',
+      },
+    ]
+  );
+
+  // Synthetic states are injected into mapEl.hass.states without mutating card._hass.states
+  assert.equal(card._hass.states['sensor.vlc_metro_train_4302'], undefined);
+  assert.equal(mockMap.hass.states['sensor.vlc_metro_station'].attributes.latitude, 39.467186);
+  assert.equal(mockMap.hass.states['sensor.vlc_metro_train_4302'].state, 'L3');
+  assert.equal(mockMap.hass.states['sensor.vlc_metro_train_4302'].attributes.friendly_name, 'L3 → Aeroport');
+
+  // Clicking a synthetic marker on ha-map stops hass-more-info propagation
+  assert.equal(typeof moreInfoListener, 'function');
+  moreInfoListener({ stopPropagation() { blockedEvent = true; } });
+  assert.equal(blockedEvent, true);
+
+  // In-place background update moves train coordinates and updates themeMode without replacing shadowRoot.innerHTML
+  const snapshotHtml = card.shadowRoot.innerHTML;
+  setState(card, '12:00', {
+    friendly_name: 'Metrovalencia Xàtiva',
+    provider: 'metrovalencia',
+    station_latitude: 39.467186,
+    station_longitude: -0.377375,
+    departures: [
+      {
+        line: '3',
+        destination: 'Aeroport',
+        time: '12:00',
+        timestamp: '2026-11-13T12:00:35Z',
+        seconds: 35,
+        vehicle: '4302',
+        latitude: 39.4685,
+        longitude: -0.374,
+      },
+    ],
+  }, 'sensor.stop', { themes: { darkMode: false } });
+
+  assert.equal(card.shadowRoot.innerHTML, snapshotHtml);
+  assert.equal(mockMap.themeMode, 'light');
+  assert.equal(mockMap.entities.length, 2);
+  assert.equal(mockMap.hass.states['sensor.vlc_metro_train_4302'].attributes.latitude, 39.4685);
+});
+
+test('Metrovalencia modal shows station-only map when trains lack GPS and hides map for EMT or when no coordinates exist', () => {
+  const card = setup();
+
+  // 1. Metrovalencia with station coordinates but no train GPS -> renders map with station marker
+  setState(card, '12:05', {
+    friendly_name: 'Metrovalencia Benimaclet',
+    provider: 'metrovalencia',
+    station_latitude: 39.484852,
+    station_longitude: -0.362333,
+    departures: [{ ...future, line: '3', destination: 'Rafelbunyol' }],
+  });
+  card._openDialog();
+  assert.match(card.shadowRoot.innerHTML, /<ha-map class="schedule-map"><\/ha-map>/);
+
+  // 2. Metrovalencia without station coordinates and without train GPS -> hides map
+  card._closeDialog();
+  setState(card, '12:05', {
+    friendly_name: 'Metrovalencia Unknown',
+    provider: 'metrovalencia',
+    departures: [{ ...future, line: '3', destination: 'Rafelbunyol' }],
+  });
+  card._openDialog();
+  assert.doesNotMatch(card.shadowRoot.innerHTML, /<ha-map/);
+
+  // 3. EMT bus stop -> hides map even if station_latitude were present
+  card._closeDialog();
+  setState(card, '12:05', {
+    friendly_name: 'EMT 508',
+    provider: 'emt',
+    station_latitude: 39.47,
+    station_longitude: -0.37,
+    departures: [future],
+  });
+  card._openDialog();
+  assert.doesNotMatch(card.shadowRoot.innerHTML, /<ha-map/);
 });
