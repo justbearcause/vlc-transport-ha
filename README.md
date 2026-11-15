@@ -31,7 +31,7 @@ It includes an **automatically registered Lovelace departure board card** (`cust
   - **Visual Editor**: Configure the sensor, custom title, maximum rows (`1`–`15`), and filters straight from the Home Assistant UI.
   - **Official Line Badges**: Displays EMT red badges (`#E30613`) and official Metrovalencia line `1`–`10` color palettes tailored for both **Light** and **Dark** themes.
   - **Smart Filtering**: Whitelist (`include`) or Blacklist (`exclude`) departures by line number (`filter_lines`) and/or destination name (`filter_destinations`, case- and accent-insensitive).
-  - **Full-Schedule Popup Modal**: Clicking the card opens a modal dialog displaying **all** upcoming departures at the stop (bypassing card filters and `max_items` limit), with second-level countdown precision (`2 min 52 s`), live train telemetry (distance in meters, train unit `#`, capacity), and an interactive **live map (`<ha-map>`)** below the list for Metrovalencia showing the station and approaching trains (`L1`–`L10`) in official line colors, plus a quick-action button to open Home Assistant's native entity *More Info* dialog.
+  - **Full-Schedule Popup Modal**: Clicking the card opens a modal dialog displaying **all** upcoming departures at the stop (bypassing card filters and `max_items` limit), with second-level countdown precision (`2 min 52 s`) and live train telemetry (distance in meters, train unit `#`, capacity) for Metrovalencia, plus a quick-action button to open Home Assistant's native entity *More Info* dialog.
   - **Live Countdown & Resilient Caching**: Uses integer minute rounding on the compact card (`< 60 s` shown as `Now`), updates relative countdowns every 10 seconds in the browser, highlights imminent arrivals (`< 5 min`), automatically hides expired departures, and preserves the last known board with a subtle warning icon if a poll temporarily fails.
 - **Multi-Language Support**:
   - Config Flow and Lovelace Card are localized in **English (`en`)**, **Spanish / Castellano (`es`)**, **Valencian / Catalan (`ca` / `va`)**, and **Russian (`ru`)**.
@@ -129,7 +129,7 @@ The integration automatically registers the custom card `custom:vlc-transport-ha
 - **Blacklist (`filter_mode: exclude`)**:
   - Any departure matching **either** `filter_lines` **or** `filter_destinations` is hidden (`OR` logic).
 - **Interactive Full Schedule**:
-  - Clicking anywhere on the card opens a popup modal with the complete unfiltered list of upcoming departures for that stop/station (including exact seconds, live train distance, unit number, capacity, and a live `<ha-map>` map of the station and approaching trains for Metrovalencia) and an info (`i`) button to open the underlying sensor's Home Assistant *More Info* dialog.
+  - Clicking anywhere on the card opens a popup modal with the complete unfiltered list of upcoming departures for that stop/station (including exact seconds and live train distance, unit number, and capacity for Metrovalencia) and an info (`i`) button to open the underlying sensor's Home Assistant *More Info* dialog.
 
 ### YAML Examples
 
