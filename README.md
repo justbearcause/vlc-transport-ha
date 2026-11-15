@@ -176,7 +176,8 @@ filter_destinations:
 
 Each configured stop or station creates a `sensor` entity polled every **30 seconds** (normalized to the `Europe/Madrid` timezone).
 
-- **Entity State (`native_value`)**: The exact `HH:MM` departure time of the very next departure, or `unknown` if there are currently no scheduled departures.
+- **Entity State (`native_value`)**: Remaining whole minutes (`int`, unit `min`, `device_class: duration`, `state_class: measurement`) until the very next departure, or `unknown` if there are currently no scheduled departures. Because the sensor uses a continuous measurement state class, Home Assistant automatically excludes its frequent countdown updates from the **Activity (Logbook)** feed.
+- **Recorder Optimization (`_unrecorded_attributes`)**: Dynamic poll attributes (`departures`, `last_updated`, `update_failed`, `last_error`) are excluded from the Home Assistant Recorder database to prevent SQLite database bloat while remaining fully available in real time for the Lovelace card, templates, and automations.
 - **Availability**: Remains `available` if cached departure data is present, allowing the Lovelace card to continue displaying known departures alongside an error indicator if a single network poll fails.
 
 ### Extra State Attributes
@@ -299,7 +300,7 @@ This integration communicates directly with public Valencia transit endpoints wi
 2. **Metrovalencia Station Directory (Config Flow & Station Coordinates)**:
    - Official FGV REST API (`https://www.fgv.es/fgv/app/es/api/v1/V/sincronizacion?fecha_desde=...`), backed by an embedded fallback directory (`const.py`) of all 144 official FGV stations and their GPS coordinates (`assets/fgvv.db`) in case the endpoint is temporarily unreachable.
 3. **EMT Real-Time Arrivals (`ValenciaTransitCoordinator`)**:
-   - Queries `https://www.emtvalencia.es/EMT/mapfunctions/MapUtilsPetitions.php?sec=getSAE&parada=<stop_id>&adaptados=false`, parses the XML `<estimacion>` payload, fixes Latin-1/UTF-8 encoding quirks, and resolves relative minutes/`Próximo` or `HH:MM` strings into exact timezone-aware timestamps.
+   - Queries `https://www.emtvalencia.es/EMT/mapfunctions/MapUtilsPetitions.php?sec=getSAE&parada=<stop_id>&adaptados=false`, parses the XML `<estimacion>` payload, fixes Latin-1/UTF-8 encoding quirks, and resolves relative minutes/`Próximo` or `HH:MM` strings into remaining `minutes`, `HH:MM` strings, and exact timezone-aware timestamps.
 4. **Metrovalencia Real-Time Departures (`ValenciaTransitCoordinator`)**:
    - Queries the official FGV SAE endpoint `https://www.fgv.es/fgv/app/es/api/v1/V/horarios-prevision-3/<stop_id>`, sorts upcoming trains across all lines by remaining `seconds`, and exposes live train telemetry (`seconds`, `minutes`, `meters`, `vehicle`, `capacity`, `latitude`, `longitude`).
 

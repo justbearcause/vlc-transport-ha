@@ -9,8 +9,13 @@ import xml.etree.ElementTree as ET
 
 import aiohttp
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
@@ -138,6 +143,7 @@ class ValenciaTransitCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
 
         errors: list[str] = []
         now = datetime.now(VLC_TZ)
+        now_sec = now.replace(microsecond=0)
         departures: list[dict[str, Any]] = []
 
         for bus in root[0]:
@@ -180,12 +186,14 @@ class ValenciaTransitCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
                 destination = destination.encode("latin-1").decode("utf-8")
             except (UnicodeEncodeError, UnicodeDecodeError):
                 pass
+            dep_minutes = max(0, int((dep_dt - now_sec).total_seconds() // 60))
             departures.append(
                 {
                     "line": (line or "—").strip(),
                     "destination": destination.strip(),
                     "time": dep_dt.strftime("%H:%M"),
                     "timestamp": dep_dt.isoformat(),
+                    "minutes": dep_minutes,
                     "provider": "emt",
                 }
             )
@@ -393,6 +401,12 @@ class ValenciaTransitSensor(
     """Sensor representing upcoming departures at a Valencia transit stop."""
 
     _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _unrecorded_attributes = frozenset(
+        {"departures", "last_updated", "update_failed", "last_error"}
+    )
 
     def __init__(
         self,
@@ -442,11 +456,13 @@ class ValenciaTransitSensor(
         return self.coordinator.last_update_success or self.coordinator.data is not None
 
     @property
-    def native_value(self) -> str | None:
-        """Always return the exact departure time (HH:MM) of the next departure."""
+    def native_value(self) -> int | None:
+        """Return remaining minutes until the next departure."""
         deps = self.coordinator.data
         if deps and len(deps) > 0:
-            return str(deps[0].get("time"))
+            minutes = deps[0].get("minutes")
+            if not isinstance(minutes, bool) and isinstance(minutes, int):
+                return minutes
         return None
 
     @property

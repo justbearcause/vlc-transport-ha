@@ -44,7 +44,9 @@ const future = { line: '7', destination: 'Centre', time: '13:05', timestamp: '20
 
 test('successful empty unknown state clears previously cached departures', () => {
   const card = setup();
-  setState(card, '13:05', { departures: [future] });
+  setState(card, '5', { departures: [{ ...future, minutes: 5 }] });
+  assert.match(card.shadowRoot.innerHTML, /Centre/);
+  setState(card, '0', { departures: [{ ...future, minutes: 0 }] });
   assert.match(card.shadowRoot.innerHTML, /Centre/);
   setState(card, 'unknown', { departures: [], update_failed: false });
   assert.match(card.shadowRoot.innerHTML, /No upcoming departures/);

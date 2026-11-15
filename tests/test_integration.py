@@ -84,6 +84,12 @@ class UpdateFailed(Exception):
 
 
 test_modules["homeassistant.components.sensor"].SensorEntity = type("SensorEntity", (), {})
+test_modules["homeassistant.components.sensor"].SensorDeviceClass = types.SimpleNamespace(
+    DURATION="duration"
+)
+test_modules["homeassistant.components.sensor"].SensorStateClass = types.SimpleNamespace(
+    MEASUREMENT="measurement"
+)
 test_modules["homeassistant.components.http"].StaticPathConfig = (
     lambda url_path, path, cache_headers=True: types.SimpleNamespace(
         url_path=url_path, path=path, cache_headers=cache_headers
@@ -93,6 +99,7 @@ test_modules["homeassistant.components.frontend"].add_extra_js_url = (
     lambda hass, url: hass.extra_js_urls.append(url)
 )
 test_modules["homeassistant.const"].Platform = types.SimpleNamespace(SENSOR="sensor")
+test_modules["homeassistant.const"].UnitOfTime = types.SimpleNamespace(MINUTES="min")
 test_modules["homeassistant.helpers.config_validation"].config_entry_only_config_schema = (
     lambda domain: {"domain": domain}
 )
@@ -212,6 +219,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
             bus(arrival="00:15"), bus(minutes="Próximo")))
         result = await self.coordinator._fetch_emt()
         self.assertEqual([row["time"] for row in result], ["00:00", "00:15", "00:00"])
+        self.assertEqual([row["minutes"] for row in result], [1, 15, 1])
         self.assertEqual(result[0]["timestamp"], "2026-11-14T00:00:59+01:00")
         self.assertEqual(result[0]["destination"], "Pass. Marítim")
         self.assertEqual(self.session.calls[0][1]["timeout"].total, 12)
@@ -339,6 +347,20 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("station_latitude", emt_sensor.extra_state_attributes)
         self.assertNotIn("station_longitude", emt_sensor.extra_state_attributes)
+
+        # Sensor uses continuous duration measurement metadata and unrecorded attributes
+        self.assertEqual(emt_sensor._attr_device_class, "duration")
+        self.assertEqual(emt_sensor._attr_native_unit_of_measurement, "min")
+        self.assertEqual(emt_sensor._attr_state_class, "measurement")
+        self.assertEqual(
+            emt_sensor._unrecorded_attributes,
+            frozenset({"departures", "last_updated", "update_failed", "last_error"}),
+        )
+        self.assertIsNone(emt_sensor.native_value)
+        emt_coordinator.data = [{"line": "7", "destination": "Centre", "time": "00:04", "minutes": 4}]
+        self.assertEqual(emt_sensor.native_value, 4)
+        self.coordinator.data = [{"line": "3", "destination": "Aeroport", "time": "00:00", "minutes": 0, "seconds": 45}]
+        self.assertEqual(metro_sensor.native_value, 0)
 
     async def test_metro_realtime_fgv_api_parsing_sorting_and_errors(self):
         self.coordinator.provider = "metrovalencia"
